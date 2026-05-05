@@ -1,0 +1,541 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\title{Difficulty-Tiered Fog-of-War Maze Generation via Markov Chain Monte Carlo Sampling}
+\author{}
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction and Motivation}
+
+Procedural Content Generation (PCG) is the algorithmic creation of game content such as maps, levels, enemies, and items. In grid-based games, the central challenge is not only generating valid maps, but generating maps with controllable and meaningful difficulty. This project focuses on generating difficulty-tiered 2D maze maps for a resource-management escape game.
+
+The proposed game is a grid-based dungeon escape game with fog of war. The player starts from a fixed start cell and must reach an exit door. The door may be initially open, or it may require a key. The map contains walls, one-cell-wide maze corridors, stamina potions, strength potions, and stationary monsters. Each movement consumes stamina. The player starts with zero strength and gains strength by collecting strength items. When the player enters a monster cell, the monster can only be defeated if the player's current strength is at least equal to the monster's strength value. After defeating the monster, that amount is subtracted from the player's strength. The player loses if stamina reaches zero or if they encounter a monster stronger than their current strength.
+
+The map is not fully visible at the beginning. Instead, only cells within a limited visibility radius around the player are revealed. Previously revealed cells remain visible. This makes exploration and resource management central to gameplay.
+
+This project frames map generation as a probabilistic sampling problem. A distribution over valid maps is defined such that maps closer to a target difficulty have higher probability. Markov Chain Monte Carlo (MCMC), specifically the Metropolis--Hastings algorithm, is used to sample maps from this distribution. Difficulty is estimated through Monte Carlo simulation of multiple agent playthroughs under partial map visibility.
+
+\section{Problem Definition}
+
+We consider an $N \times N$ grid map $M$, where each cell belongs to one of the following types:
+
+\begin{itemize}[noitemsep]
+    \item Wall
+    \item Floor
+    \item Start cell $S$
+    \item Door cell $D$
+    \item Key cell $K$
+    \item Monster cell
+    \item Strength potion cell
+    \item Stamina potion cell
+\end{itemize}
+
+The player state is defined as:
+
+\[
+s = (p, stamina, strength, hasKey, V, I, R)
+\]
+
+where:
+
+\begin{itemize}[noitemsep]
+    \item $p$ is the player's current position,
+    \item $stamina$ is the player's remaining stamina,
+    \item $strength$ is the player's current strength,
+    \item $hasKey$ indicates whether the key has been collected,
+    \item $V$ is the set of visible or previously revealed cells,
+    \item $I$ is the set of collected items,
+    \item $R$ is the set of defeated monsters.
+\end{itemize}
+
+The initial state is:
+
+\[
+s_0 = (S, Stamina_0, 0, false, V_0, \emptyset, \emptyset)
+\]
+
+where $V_0$ contains the initially visible cells around the start position.
+
+At each step, the player may move to an adjacent non-wall cell. Each movement decreases stamina by one:
+
+\[
+stamina \leftarrow stamina - 1
+\]
+
+If the player enters a stamina potion cell, stamina increases by the potion value and the potion disappears. If the player enters a strength potion cell, strength increases by the potion value and the potion disappears.
+
+If the player enters a monster cell with monster strength $m$, the transition is valid only if:
+
+\[
+strength \geq m
+\]
+
+After defeating the monster:
+
+\[
+strength \leftarrow strength - m
+\]
+
+If the door is unlocked, reaching the door results in success. If the door is locked, the player must collect the key before entering the door.
+
+The core research question is:
+
+\begin{quote}
+Can Markov Chain Monte Carlo sampling generate fog-of-war maze maps whose difficulty, measured by Monte Carlo agent simulation, can be controlled across multiple difficulty tiers?
+\end{quote}
+
+\section{Objectives and Deliverables}
+
+The main objectives of this project are:
+
+\begin{enumerate}[noitemsep]
+    \item Implement a grid-based maze map representation.
+    \item Implement hard constraints for connectivity, one-cell-wide maze structure, and full resource-aware solvability.
+    \item Implement a resource-aware solver that determines whether a map is theoretically solvable under the full game rules.
+    \item Implement an MCMC map sampler using the Metropolis--Hastings algorithm.
+    \item Implement a fog-of-war agent simulator.
+    \item Estimate map difficulty using Monte Carlo simulation with $K = 500$ independent agent playthroughs.
+    \item Generate maps across five target difficulty tiers.
+    \item Analyze convergence, acceptance rate, sampling efficiency, and difficulty calibration.
+\end{enumerate}
+
+The expected deliverables are:
+
+\begin{itemize}[noitemsep]
+    \item Python source code,
+    \item written project report,
+    \item visual gallery of generated maps across difficulty tiers,
+    \item convergence diagnostic plots,
+    \item difficulty calibration curves,
+    \item success and failure statistics from Monte Carlo simulations.
+\end{itemize}
+
+\section{Methodology}
+
+\subsection{Map Generation via Metropolis--Hastings}
+
+Let $M$ denote a candidate map. We define a Boltzmann distribution over valid maps:
+
+\[
+P(M) \propto \exp \left( -\frac{E(M)}{T} \right)
+\]
+
+where $E(M)$ is the energy function and $T$ is the temperature. Lower energy corresponds to better maps, meaning maps closer to the desired difficulty target are sampled with higher probability.
+
+At each MCMC step, a candidate map $M'$ is generated by applying a local modification to the current map. Possible proposal moves include:
+
+\begin{itemize}[noitemsep]
+    \item converting a wall cell to a floor cell,
+    \item converting a floor cell to a wall cell,
+    \item moving a stamina potion,
+    \item moving a strength potion,
+    \item moving a monster,
+    \item changing a monster's strength value,
+    \item moving the key,
+    \item toggling whether the door requires a key.
+\end{itemize}
+
+The candidate map is accepted with probability:
+
+\[
+\alpha = \min \left(1, \exp \left( -\frac{E(M') - E(M)}{T} \right) \right)
+\]
+
+A simulated annealing schedule may be used to improve convergence:
+
+\[
+T(t) = T_0 \cdot \exp(-\gamma t)
+\]
+
+This allows the sampler to explore broadly at the beginning and gradually focus on lower-energy maps.
+
+\subsection{Energy Function}
+
+The energy function is defined as:
+
+\[
+E(M) =
+\lambda_1 E_{path}(M)
++ \lambda_2 E_{monster}(M)
++ \lambda_3 E_{resource}(M)
++ \lambda_4 E_{key}(M)
++ \lambda_5 E_{exploration}(M)
++ \lambda_6 E_{difficulty}(M)
+\]
+
+where each $\lambda_i \geq 0$ is a tunable weight.
+
+\subsubsection{Path Term}
+
+The path term controls the approximate length of the solution route:
+
+\[
+E_{path}(M) = \frac{|L_{solution} - L_{target}|}{N^2}
+\]
+
+where $L_{solution}$ is the length of a valid solution path found by the resource-aware solver, and $L_{target}$ is the target solution length for the selected difficulty tier.
+
+Path length is not treated as a hard constraint. Long paths are allowed because they naturally increase stamina consumption and are reflected in both the resource-aware solvability check and the Monte Carlo difficulty estimate.
+
+\subsubsection{Monster Term}
+
+The monster term controls monster pressure:
+
+\[
+E_{monster}(M) = \frac{|G_{monster} - G_{target}|}{N^2}
+\]
+
+where $G_{monster}$ is the total strength cost imposed by monsters on important routes, and $G_{target}$ is the desired monster pressure for the selected difficulty tier.
+
+\subsubsection{Resource Term}
+
+The resource term controls the amount and placement of stamina and strength resources:
+
+\[
+E_{resource}(M) =
+|R_{stamina} - R^{*}_{stamina}|
++
+|R_{strength} - R^{*}_{strength}|
+\]
+
+where $R_{stamina}$ and $R_{strength}$ are the available stamina and strength resources, and $R^{*}_{stamina}$ and $R^{*}_{strength}$ are tier-specific targets.
+
+\subsubsection{Key-Door Term}
+
+If the door is locked, the key-door term measures the additional route complexity introduced by the key:
+
+\[
+E_{key}(M) = \frac{dist(S,K) + dist(K,D)}{N^2}
+\]
+
+If the door is unlocked, this term is set to zero.
+
+\subsubsection{Exploration Term}
+
+The exploration term captures how much the player is encouraged to explore under fog of war:
+
+\[
+E_{exploration}(M) = \frac{deadEndCount(M)}{N^2}
+\]
+
+Higher difficulty tiers may target more dead ends and misleading branches, while easier tiers may prefer more direct maze layouts.
+
+\subsubsection{Difficulty Term}
+
+The difficulty term steers the sampler toward the desired Monte Carlo difficulty estimate:
+
+\[
+E_{difficulty}(M) =
+(\hat{D}(M) - d_{target})^2
+\]
+
+where $\hat{D}(M)$ is the estimated failure rate from Monte Carlo agent simulation, and:
+
+\[
+d_{target} \in \{0.1, 0.3, 0.5, 0.7, 0.9\}
+\]
+
+corresponds to five increasing difficulty tiers.
+
+\subsection{Hard Constraints}
+
+Hard constraints are enforced before evaluating the energy function. If a candidate map violates any hard constraint, it is immediately rejected.
+
+\subsubsection{HC1 --- Full Connectivity}
+
+All non-wall cells must be reachable from the start cell through walkable cells. This ensures that the map contains no unreachable corridors, items, monsters, keys, or doors.
+
+\subsubsection{HC2 --- One-Cell-Wide Maze Structure}
+
+The map must preserve a maze-like corridor structure. Candidate maps containing $2 \times 2$ open-cell blocks are rejected. This prevents wide rooms or wide corridors and keeps the map visually and structurally similar to a traditional maze.
+
+\subsubsection{HC3 --- Resource-Aware Solvability}
+
+There must exist at least one valid solution path from the start cell to the door under the full game rules. This constraint jointly considers:
+
+\begin{itemize}[noitemsep]
+    \item stamina consumption per movement,
+    \item stamina potion collection,
+    \item strength potion collection,
+    \item monster strength costs,
+    \item key collection,
+    \item locked-door requirements.
+\end{itemize}
+
+This replaces separate stamina, strength, key, and monster feasibility checks. These factors must be evaluated together because separate checks may incorrectly accept maps where one path is feasible in terms of stamina and another path is feasible in terms of strength, but no single path satisfies all requirements simultaneously.
+
+\subsubsection{HC4 --- Tier-Dependent Minimum Resource Margin}
+
+A valid solution path must satisfy a minimum resource safety margin. The margin is high for easier tiers and low for more difficult tiers.
+
+For example, the solution path may be required to satisfy:
+
+\[
+stamina_{final} \geq margin_{stamina}
+\]
+
+and:
+
+\[
+strength_{final} \geq margin_{strength}
+\]
+
+The margins can be defined as:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Difficulty Tier & Stamina Margin & Strength Margin \\
+\midrule
+Very Easy & High & High \\
+Easy & Medium-High & Medium \\
+Medium & Medium & Low \\
+Hard & Low & Very Low \\
+Very Hard & Zero or Near-Zero & Zero or Near-Zero \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This allows easy maps to have a larger error buffer, while hard maps may be solvable only with tight resource management.
+
+\subsection{Resource-Aware Solver}
+
+A resource-aware solver is used to determine whether a candidate map is theoretically solvable. Unlike a standard BFS, which only tracks position, this solver searches an expanded state space:
+
+\[
+s = (p, stamina, strength, hasKey, I, R)
+\]
+
+where $I$ is the set of collected items and $R$ is the set of defeated monsters.
+
+The solver starts from:
+
+\[
+s_0 = (S, Stamina_0, 0, false, \emptyset, \emptyset)
+\]
+
+and explores valid transitions according to the game rules. A transition to a neighboring cell is valid only if:
+
+\begin{itemize}[noitemsep]
+    \item the target cell is not a wall,
+    \item the player has positive stamina before movement,
+    \item the player can pay the monster strength cost if the target contains an undefeated monster,
+    \item the player has the key if the target is a locked door.
+\end{itemize}
+
+The map is accepted by HC3 if the solver finds at least one successful state in which the player reaches the door.
+
+The solver is not used to measure difficulty. It is used only as a hard validity filter. Difficulty is still estimated statistically through Monte Carlo simulation of agents under partial observability.
+
+To reduce computation time, dominance pruning can be used. If two states share the same position and key status, and one state has greater or equal stamina and strength than the other, the weaker state can be discarded.
+
+\subsection{Monte Carlo Agent Simulation}
+
+For each valid candidate map, difficulty is estimated by simulating $K = 500$ independent agent playthroughs.
+
+Each simulated agent has the same game rules as the player:
+
+\begin{itemize}[noitemsep]
+    \item movement consumes stamina,
+    \item stamina potions increase stamina,
+    \item strength potions increase strength,
+    \item monsters consume strength,
+    \item locked doors require a key,
+    \item the agent loses if stamina reaches zero or if it encounters a monster stronger than its current strength.
+\end{itemize}
+
+The agent operates under fog of war. At the beginning, only cells within a fixed visibility radius are known. As the agent moves, new cells are revealed, and previously revealed cells remain visible.
+
+The agent follows an $\epsilon$-greedy policy:
+
+\[
+\pi(a|s) =
+\begin{cases}
+\text{best known action}, & \text{with probability } 1-\epsilon \\
+\text{random valid action}, & \text{with probability } \epsilon
+\end{cases}
+\]
+
+The best known action depends on the currently visible and remembered map:
+
+\begin{itemize}[noitemsep]
+    \item if the visible door is unlocked, move toward the door;
+    \item if the visible door is locked and the key has not been collected, search for the key;
+    \item if the key is visible, move toward the key;
+    \item if a useful stamina or strength item is visible, move toward it if beneficial;
+    \item otherwise, move toward an unexplored frontier cell.
+\end{itemize}
+
+A simulation run is successful if the agent reaches the door under the correct condition. A run is considered failed if:
+
+\begin{itemize}[noitemsep]
+    \item stamina reaches zero,
+    \item the agent encounters a monster stronger than its current strength,
+    \item the agent cannot find a valid move,
+    \item a maximum simulation step limit is exceeded.
+\end{itemize}
+
+The maximum step limit is used only to prevent infinite wandering during simulation. It is not a hard constraint on map generation. For example:
+
+\[
+maxSteps = cN^2
+\]
+
+where $c$ may be set to 5 or 8.
+
+The difficulty estimate is:
+
+\[
+\hat{D}(M) =
+\frac{\text{failed runs}}{K}
+\]
+
+The uncertainty of this estimate can be approximated by:
+
+\[
+\sigma_{\hat{D}} =
+\sqrt{
+\frac{\hat{D}(M)(1-\hat{D}(M))}{K}
+}
+\]
+
+This nested structure is the core of the project: MCMC is used for map generation, while Monte Carlo simulation is used for difficulty estimation.
+
+\subsection{Difficulty Tiers}
+
+The system generates maps for five difficulty tiers:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Tier & Target Difficulty \\
+\midrule
+Very Easy & $d_{target} = 0.1$ \\
+Easy & $d_{target} = 0.3$ \\
+Medium & $d_{target} = 0.5$ \\
+Hard & $d_{target} = 0.7$ \\
+Very Hard & $d_{target} = 0.9$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Each tier adjusts target properties such as:
+
+\begin{itemize}[noitemsep]
+    \item solution path length,
+    \item number of dead ends,
+    \item monster count,
+    \item total monster strength,
+    \item stamina potion availability,
+    \item strength potion availability,
+    \item key distance,
+    \item resource safety margin.
+\end{itemize}
+
+Easy maps should have shorter paths, fewer monsters, more accessible resources, and larger stamina and strength margins. Hard maps should have longer paths, more misleading branches, stronger mandatory monsters, tighter stamina margins, and more difficult key-door placement.
+
+\subsection{Computational Considerations}
+
+The resource-aware solver is more expensive than ordinary BFS because it searches over position, stamina, strength, item collection, monster defeat status, and key possession. However, it is still practical for moderate grid sizes such as $15 \times 15$, $21 \times 21$, or $25 \times 25$, especially when item and monster counts are bounded.
+
+The pipeline first applies cheap validity checks, such as full connectivity and the $2 \times 2$ open-block constraint. The resource-aware solver is only run on maps that pass these preliminary checks.
+
+The most computationally expensive part of the system is expected to be the Monte Carlo difficulty estimation, since it may require hundreds of agent simulations for each valid candidate map. If necessary, a two-stage estimation strategy can be used:
+
+\begin{itemize}[noitemsep]
+    \item use a smaller number of simulations during MCMC sampling,
+    \item use $K = 500$ simulations for final evaluation and reporting.
+\end{itemize}
+
+\subsection{Importance Sampling for Extreme Difficulty Tiers}
+
+Very easy and very hard maps may be rare under the standard proposal distribution. Importance Sampling can be used to improve sampling efficiency for extreme target tiers.
+
+For very easy maps, the proposal distribution may be biased toward:
+
+\begin{itemize}[noitemsep]
+    \item shorter solution paths,
+    \item more stamina potions,
+    \item more strength potions,
+    \item fewer monsters,
+    \item unlocked doors,
+    \item fewer dead ends.
+\end{itemize}
+
+For very hard maps, the proposal distribution may be biased toward:
+
+\begin{itemize}[noitemsep]
+    \item longer paths,
+    \item locked doors,
+    \item more dead ends,
+    \item stronger monsters,
+    \item tighter resource margins,
+    \item more distant key placement.
+\end{itemize}
+
+Sampling efficiency can be evaluated using Effective Sample Size (ESS).
+
+\section{Evaluation Plan}
+
+The project will be evaluated using both qualitative and quantitative analysis.
+
+\subsection{Generated Map Gallery}
+
+A visual gallery will show generated maps for each difficulty tier. The maps should demonstrate increasing complexity, longer routes, more dangerous monster placement, and tighter resource availability as difficulty increases.
+
+\subsection{Difficulty Calibration}
+
+For each target difficulty tier, multiple maps will be generated and evaluated using Monte Carlo agent simulations. The measured difficulty $\hat{D}(M)$ will be compared with the target difficulty $d_{target}$.
+
+A successful result would show that generated maps cluster near their intended target difficulty levels.
+
+\subsection{MCMC Diagnostics}
+
+The MCMC sampling process will be evaluated using:
+
+\begin{itemize}[noitemsep]
+    \item energy over time,
+    \item acceptance rate,
+    \item difficulty estimate over time,
+    \item convergence behavior,
+    \item number of rejected candidates due to hard constraints.
+\end{itemize}
+
+\subsection{Agent Failure Analysis}
+
+Agent failures will be categorized by cause:
+
+\begin{itemize}[noitemsep]
+    \item stamina depletion,
+    \item insufficient strength against a monster,
+    \item failure to find the key,
+    \item failure to reach the door within the step limit,
+    \item inefficient exploration under fog of war.
+\end{itemize}
+
+This analysis will help explain why maps are difficult and whether the generated difficulty is meaningful.
+
+\section{Expected Outcome}
+
+The expected outcome is a complete procedural generation pipeline capable of producing playable fog-of-war maze maps across multiple difficulty tiers. Every generated map will satisfy strict validity constraints, including full connectivity, one-cell-wide maze structure, and resource-aware solvability. Among these valid maps, difficulty will be controlled using Monte Carlo simulation of agent playthroughs.
+
+The final system should demonstrate that MCMC sampling combined with Monte Carlo difficulty estimation can generate maps that are not only valid, but also progressively more challenging according to a measurable difficulty metric.
+
+\section{Conclusion}
+
+This project combines procedural content generation, Markov Chain Monte Carlo sampling, resource-aware path solving, and Monte Carlo simulation-based difficulty estimation. The resource-aware solver guarantees that generated maps are theoretically solvable under the complete game rules. The Monte Carlo agent simulation then estimates how difficult each solvable map is under partial observability and imperfect exploration.
+
+This separation is important: the solver determines validity, while Monte Carlo simulation determines difficulty. Therefore, the use of a deterministic solver does not replace the Monte Carlo component. Instead, it strengthens the framework by ensuring that high-difficulty maps are genuinely challenging rather than impossible.
+
+\end{document}
