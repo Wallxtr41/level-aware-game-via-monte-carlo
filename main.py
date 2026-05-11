@@ -3,11 +3,14 @@ import sys
 
 import pygame
 
-from utils.maze_generation import MAP_HEIGHT, MAP_WIDTH, generate_maze_map
+from utils.maze_generation import MAP_HEIGHT, MAP_WIDTH
+from utils.map_entities import MazeLayout, generate_maze_layout
 
 TILE_SIZE = 16
 SCALE = 3
 TILE_PIXELS = TILE_SIZE * SCALE
+ITEM_SIZE = 12
+ITEM_PIXELS = ITEM_SIZE * SCALE
 
 BASE_DIR = Path(__file__).resolve().parent
 TILES_DIR = BASE_DIR / "tiles"
@@ -29,16 +32,31 @@ TILE_PATHS = {
     "threeway_down": TILES_DIR / "threeway" / "threeway_down.png",
     "threeway_left": TILES_DIR / "threeway" / "threeway_left.png",
     "crossroads": TILES_DIR / "crossroads" / "crossroads.png",
+    "door_closed": TILES_DIR / "items" / "dumb_closed_door.png",
+    "door_open": TILES_DIR / "items" / "dumb_open_door.png",
+    "item_stamina": TILES_DIR / "items" / "dumb_stamina.png",
+    "item_power": TILES_DIR / "items" / "dumb_power.png",
+    "item_key": TILES_DIR / "items" / "dumb_key.png",
 }
 
 
-def load_tile(path):
+def load_tile(path, size):
     image = pygame.image.load(path).convert_alpha()
-    return pygame.transform.scale(image, (TILE_PIXELS, TILE_PIXELS))
+    return pygame.transform.scale(image, size)
 
 
 def load_tiles():
-    return {name: load_tile(path) for name, path in TILE_PATHS.items()}
+    tiles = {}
+
+    for name, path in TILE_PATHS.items():
+        if name.startswith("item_"):
+            size = (ITEM_PIXELS, ITEM_PIXELS)
+        else:
+            size = (TILE_PIXELS, TILE_PIXELS)
+
+        tiles[name] = load_tile(path, size)
+
+    return tiles
 
 
 def is_road(map_data, row, col):
@@ -94,30 +112,53 @@ def get_road_tile(tiles, map_data, row, col):
     return tiles["road_two_corner_up"]
 
 
-def get_tile_surface(tiles, map_data, row, col):
+def get_tile_surface(tiles, map_data, row, col, door_position):
+    if (row, col) == door_position:
+        return tiles["door_closed"]
+
     if map_data[row][col] == 1:
         return tiles["wall"]
+
     return get_road_tile(tiles, map_data, row, col)
 
 
-def draw_map(screen, tiles, map_data):
+def get_item_surface(tiles, item_kind):
+    return tiles[f"item_{item_kind}"]
+
+
+def draw_map(screen, tiles, layout: MazeLayout):
     screen.fill((0, 0, 0))
 
-    for row_index, row in enumerate(map_data):
+    for row_index, row in enumerate(layout.grid):
         for col_index, _ in enumerate(row):
             x = col_index * TILE_PIXELS
             y = row_index * TILE_PIXELS
-            tile_surface = get_tile_surface(tiles, map_data, row_index, col_index)
+            tile_surface = get_tile_surface(
+                tiles,
+                layout.grid,
+                row_index,
+                col_index,
+                layout.door,
+            )
             screen.blit(tile_surface, (x, y))
+
+    for item in layout.items:
+        row_index, col_index = item.position
+        x = col_index * TILE_PIXELS
+        y = row_index * TILE_PIXELS
+        item_surface = get_item_surface(tiles, item.kind)
+        item_x = x + (TILE_PIXELS - ITEM_PIXELS) // 2
+        item_y = y + (TILE_PIXELS - ITEM_PIXELS) // 2
+        screen.blit(item_surface, (item_x, item_y))
 
 
 def main():
     pygame.init()
 
-    current_map = generate_maze_map(MAP_WIDTH, MAP_HEIGHT)
+    current_layout = generate_maze_layout(MAP_WIDTH, MAP_HEIGHT)
 
-    width = len(current_map[0]) * TILE_PIXELS
-    height = len(current_map) * TILE_PIXELS
+    width = len(current_layout.grid[0]) * TILE_PIXELS
+    height = len(current_layout.grid) * TILE_PIXELS
 
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption("Maze Map Test - R: Yeni Harita")
@@ -132,9 +173,9 @@ def main():
                 sys.exit()
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                current_map = generate_maze_map(MAP_WIDTH, MAP_HEIGHT)
+                current_layout = generate_maze_layout(MAP_WIDTH, MAP_HEIGHT)
 
-        draw_map(screen, tiles, current_map)
+        draw_map(screen, tiles, current_layout)
 
         pygame.display.flip()
         clock.tick(60)

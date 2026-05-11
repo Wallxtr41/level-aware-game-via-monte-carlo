@@ -14,22 +14,22 @@ from utils.hard_constraints import (
     would_create_open_2x2,
 )
 from utils.map_analysis import (
-    choose_farthest_reachable_cell,
     copy_grid,
     is_walkable,
     render_ascii_grid,
 )
+from utils.map_entities import choose_door_position
 from utils.maze_generation import MAP_HEIGHT, MAP_WIDTH, generate_maze_map
 
 RANDOM_SEED = 42
 
-GRID_WIDTH = 12
-GRID_HEIGHT = 12
+GRID_WIDTH = 15
+GRID_HEIGHT = 15
 START_POS = (1, 1)
-TARGET_PATH_LENGTH =50
+TARGET_PATH_LENGTH =10
 ENERGY_FUNCTION = make_path_length_energy(TARGET_PATH_LENGTH)
 
-MCMC_STEPS = 200
+MCMC_STEPS = 1000
 TEMPERATURE = 2.0
 MAX_PROPOSAL_ATTEMPTS = 40
 LOG_EVERY = 20
@@ -54,11 +54,6 @@ class StepStats:
     constraint_rejections: int = 0
     mh_rejections: int = 0
     accepted: int = 0
-
-
-def choose_door_position(grid: Grid, start: Position) -> Position:
-    return choose_farthest_reachable_cell(grid, start)
-
 
 def is_state_valid(state: BaselineState) -> bool:
     start_row, start_col = state.start
