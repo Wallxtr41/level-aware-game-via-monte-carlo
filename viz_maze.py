@@ -1,10 +1,16 @@
 from pathlib import Path
+import random
 import sys
 
 import pygame
 
-from utils.maze_generation import MAP_HEIGHT, MAP_WIDTH
-from utils.map_entities import MazeLayout, generate_maze_layout
+import baseline_pipeline as bp
+
+MODE = "stamina_only"
+DISPLAY_STATE = "best"  # final or best
+MCMC_STEPS = 300
+RANDOM_SEED = 20
+WINDOW_TITLE = "Baseline MCMC Visualizer"
 
 TILE_SIZE = 16
 SCALE = 3
@@ -35,7 +41,6 @@ TILE_PATHS = {
     "door_closed": TILES_DIR / "items" / "dumb_closed_door.png",
     "door_open": TILES_DIR / "items" / "dumb_open_door.png",
     "item_stamina": TILES_DIR / "items" / "dumb_stamina.png",
-    "item_power": TILES_DIR / "items" / "dumb_power.png",
     "item_key": TILES_DIR / "items" / "dumb_key.png",
     "player": TILES_DIR / "player" / "dumb_player.png",
 }
@@ -113,37 +118,31 @@ def get_road_tile(tiles, map_data, row, col):
     return tiles["road_two_corner_up"]
 
 
-def get_tile_surface(tiles, map_data, row, col, door_position):
-    if (row, col) == door_position:
-        return tiles["door_closed"]
+def get_tile_surface(tiles, state, row, col):
+    if (row, col) == state.door:
+        return tiles["door_closed"] if state.locked_door else tiles["door_open"]
 
-    if map_data[row][col] == 1:
+    if state.grid[row][col] == 1:
         return tiles["wall"]
 
-    return get_road_tile(tiles, map_data, row, col)
+    return get_road_tile(tiles, state.grid, row, col)
 
 
 def get_item_surface(tiles, item_kind):
     return tiles[f"item_{item_kind}"]
 
 
-def draw_map(screen, tiles, layout: MazeLayout):
+def draw_state(screen, tiles, state):
     screen.fill((0, 0, 0))
 
-    for row_index, row in enumerate(layout.grid):
+    for row_index, row in enumerate(state.grid):
         for col_index, _ in enumerate(row):
             x = col_index * TILE_PIXELS
             y = row_index * TILE_PIXELS
-            tile_surface = get_tile_surface(
-                tiles,
-                layout.grid,
-                row_index,
-                col_index,
-                layout.door,
-            )
+            tile_surface = get_tile_surface(tiles, state, row_index, col_index)
             screen.blit(tile_surface, (x, y))
 
-    for item in layout.items:
+    for item in state.items:
         row_index, col_index = item.position
         x = col_index * TILE_PIXELS
         y = row_index * TILE_PIXELS
@@ -152,22 +151,40 @@ def draw_map(screen, tiles, layout: MazeLayout):
         item_y = y + (TILE_PIXELS - ITEM_PIXELS) // 2
         screen.blit(item_surface, (item_x, item_y))
 
-    start_row, start_col = layout.start
+    start_row, start_col = state.start
     player_x = start_col * TILE_PIXELS + (TILE_PIXELS - ITEM_PIXELS) // 2
     player_y = start_row * TILE_PIXELS + (TILE_PIXELS - ITEM_PIXELS) // 2
     screen.blit(tiles["player"], (player_x, player_y))
 
 
+def generate_display_state():
+    bp.GAME_MODE = MODE
+    bp.MCMC_STEPS = MCMC_STEPS
+    bp.RANDOM_SEED = RANDOM_SEED
+
+    if RANDOM_SEED is not None:
+        random.seed(RANDOM_SEED)
+
+    final_state, final_energy, best_state, best_energy, _ = bp.run_baseline_mcmc(
+        energy_function=bp.ENERGY_FUNCTION,
+    )
+
+    if DISPLAY_STATE == "final":
+        return final_state, final_energy, "final"
+
+    return best_state, best_energy, "best"
+
+
 def main():
     pygame.init()
 
-    current_layout = generate_maze_layout(MAP_WIDTH, MAP_HEIGHT)
-
-    width = len(current_layout.grid[0]) * TILE_PIXELS
-    height = len(current_layout.grid) * TILE_PIXELS
-
+    state, energy, state_label = generate_display_state()
+    width = len(state.grid[0]) * TILE_PIXELS
+    height = len(state.grid) * TILE_PIXELS
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("Maze Map Test - R: Yeni Harita")
+    pygame.display.set_caption(
+        f"{WINDOW_TITLE} - mode={MODE} state={state_label} energy={energy}"
+    )
 
     tiles = load_tiles()
     clock = pygame.time.Clock()
@@ -178,11 +195,7 @@ def main():
                 pygame.quit()
                 sys.exit()
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                current_layout = generate_maze_layout(MAP_WIDTH, MAP_HEIGHT)
-
-        draw_map(screen, tiles, current_layout)
-
+        draw_state(screen, tiles, state)
         pygame.display.flip()
         clock.tick(60)
 

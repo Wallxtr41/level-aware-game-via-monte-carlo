@@ -18,6 +18,16 @@ from .hc3_resource_solver import (
     is_hc3_satisfied,
     solve_hc3,
 )
+from .hc3_stamina_only_solver import (
+    StaminaOnlyGraph,
+    StaminaOnlyHC3GraphCache,
+    StaminaOnlyHC3Problem,
+    StaminaOnlyHC3Result,
+    StaminaOnlyState,
+    build_stamina_only_hc3_graph,
+    is_stamina_only_hc3_satisfied,
+    solve_stamina_only_hc3,
+)
 
 __all__ = [
     "can_open_cell_preserve_connectivity",
@@ -34,4 +44,12 @@ __all__ = [
     "build_hc3_graph",
     "is_hc3_satisfied",
     "solve_hc3",
+    "StaminaOnlyGraph",
+    "StaminaOnlyHC3GraphCache",
+    "StaminaOnlyHC3Problem",
+    "StaminaOnlyHC3Result",
+    "StaminaOnlyState",
+    "build_stamina_only_hc3_graph",
+    "is_stamina_only_hc3_satisfied",
+    "solve_stamina_only_hc3",
 ]
