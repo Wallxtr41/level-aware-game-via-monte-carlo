@@ -10,6 +10,11 @@ from utils.maze_generation import EXTRA_CONNECTION_CHANCE, generate_maze_map
 Grid = list[list[int]]
 Position = tuple[int, int]
 ItemKind = Literal["stamina", "power", "key"]
+DEFAULT_ITEM_VALUES: dict[ItemKind, int] = {
+    "stamina": 6,
+    "power": 3,
+    "key": 0,
+}
 
 START_POS: Position = (1, 1)
 DEFAULT_ITEM_KINDS: tuple[ItemKind, ...] = ("stamina", "power", "key")
@@ -19,6 +24,13 @@ DEFAULT_ITEM_KINDS: tuple[ItemKind, ...] = ("stamina", "power", "key")
 class ItemPlacement:
     kind: ItemKind
     position: Position
+    value: int = 0
+
+
+@dataclass(frozen=True)
+class MonsterPlacement:
+    position: Position
+    strength: int
 
 
 @dataclass(frozen=True)
@@ -31,6 +43,10 @@ class MazeLayout:
 
 def choose_door_position(grid: Grid, start: Position = START_POS) -> Position:
     return choose_farthest_reachable_cell(grid, start)
+
+
+def get_default_item_value(item_kind: ItemKind) -> int:
+    return DEFAULT_ITEM_VALUES[item_kind]
 
 
 def get_walkable_positions(
@@ -73,7 +89,11 @@ def place_items(
     selected_positions = rng.sample(walkable_positions, k=len(item_kinds))
 
     return tuple(
-        ItemPlacement(kind=item_kind, position=position)
+        ItemPlacement(
+            kind=item_kind,
+            position=position,
+            value=get_default_item_value(item_kind),
+        )
         for item_kind, position in zip(item_kinds, selected_positions, strict=True)
     )
 

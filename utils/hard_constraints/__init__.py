@@ -10,6 +10,14 @@ from .hc2_no_open_2x2 import (
     is_hc2_satisfied,
     would_create_open_2x2,
 )
+from .hc3_resource_solver import (
+    HC3GraphCache,
+    HC3Problem,
+    HC3Result,
+    build_hc3_graph,
+    is_hc3_satisfied,
+    solve_hc3,
+)
 
 __all__ = [
     "can_open_cell_preserve_connectivity",
@@ -20,4 +28,10 @@ __all__ = [
     "find_open_2x2_blocks",
     "is_hc2_satisfied",
     "would_create_open_2x2",
+    "HC3GraphCache",
+    "HC3Problem",
+    "HC3Result",
+    "build_hc3_graph",
+    "is_hc3_satisfied",
+    "solve_hc3",
 ]
