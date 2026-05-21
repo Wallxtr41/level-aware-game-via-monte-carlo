@@ -69,6 +69,26 @@ class StaminaOnlyHC3Result:
     cache_hit: bool = False
 
 
+@dataclass(frozen=True)
+class StaminaOnlyHC3Analysis:
+    solvable: bool
+    explored_states: int
+    node_count: int
+    cache_hit: bool = False
+    shortest_success_path_length: int | None = None
+    best_remaining_stamina: int | None = None
+    solution_steps: tuple["StaminaOnlySolutionStep", ...] = ()
+
+
+@dataclass(frozen=True)
+class StaminaOnlySolutionStep:
+    node_id: int
+    position: Position
+    kind: str
+    remaining_stamina: int
+    edge_cost: int
+
+
 @dataclass
 class StaminaOnlyHC3GraphCache:
     graphs: dict[tuple[object, ...], StaminaOnlyGraph] = field(default_factory=dict)
@@ -253,10 +273,64 @@ def _collect_node_effects(
     )
 
 
-def solve_stamina_only_hc3(
+def _get_collected_stamina_value(problem: StaminaOnlyHC3Problem, collected_items_mask: int) -> int:
+    total = 0
+
+    for item_index, item in enumerate(problem.items):
+        if not (collected_items_mask & (1 << item_index)):
+            continue
+
+        if item.kind == "stamina":
+            total += item.value
+
+    return total
+
+
+def _state_key(state: StaminaOnlyState) -> tuple[int, int, bool, int]:
+    return (
+        state.node_id,
+        state.collected_items_mask,
+        state.has_key,
+        state.remaining_stamina,
+    )
+
+
+def _reconstruct_solution_steps(
+    graph: StaminaOnlyGraph,
+    parent_by_state_key: dict[tuple[int, int, bool, int], tuple[tuple[int, int, bool, int] | None, int]],
+    final_state: StaminaOnlyState,
+) -> tuple[StaminaOnlySolutionStep, ...]:
+    steps: list[StaminaOnlySolutionStep] = []
+    current_key = _state_key(final_state)
+
+    while True:
+        node = graph.nodes[current_key[0]]
+        parent_key, edge_cost = parent_by_state_key[current_key]
+        steps.append(
+            StaminaOnlySolutionStep(
+                node_id=node.node_id,
+                position=node.position,
+                kind=node.kind,
+                remaining_stamina=current_key[3],
+                edge_cost=edge_cost,
+            )
+        )
+
+        if parent_key is None:
+            break
+
+        current_key = parent_key
+
+    steps.reverse()
+    return tuple(steps)
+
+
+def _analyze_stamina_only_search(
     problem: StaminaOnlyHC3Problem,
     cache: StaminaOnlyHC3GraphCache | None = None,
-) -> StaminaOnlyHC3Result:
+    *,
+    stop_on_first_success: bool,
+) -> StaminaOnlyHC3Analysis:
     graph, cache_hit = build_stamina_only_hc3_graph(problem, cache=cache)
     start_state = _collect_node_effects(
         problem,
@@ -277,7 +351,13 @@ def solve_stamina_only_hc3(
             start_state.has_key,
         ): start_state.remaining_stamina
     }
+    parent_by_state_key: dict[tuple[int, int, bool, int], tuple[tuple[int, int, bool, int] | None, int]] = {
+        _state_key(start_state): (None, 0)
+    }
     explored_states = 0
+    shortest_success_path_length: int | None = None
+    best_remaining_stamina: int | None = None
+    best_solution_steps: tuple[StaminaOnlySolutionStep, ...] = ()
 
     while frontier:
         current_state = frontier.popleft()
@@ -306,12 +386,59 @@ def solve_stamina_only_hc3(
             target_node = graph.nodes[target_node_id]
 
             if target_node.kind == "door" and next_state.remaining_stamina >= 0:
-                return StaminaOnlyHC3Result(
-                    solvable=True,
-                    explored_states=explored_states,
-                    node_count=len(graph.nodes),
-                    cache_hit=cache_hit,
+                collected_stamina_value = _get_collected_stamina_value(
+                    problem,
+                    next_state.collected_items_mask,
                 )
+                success_path_length = (
+                    problem.initial_stamina
+                    + collected_stamina_value
+                    - next_state.remaining_stamina
+                )
+                shortest_success_path_length = (
+                    success_path_length
+                    if shortest_success_path_length is None
+                    else min(shortest_success_path_length, success_path_length)
+                )
+                best_remaining_stamina = (
+                    next_state.remaining_stamina
+                    if best_remaining_stamina is None
+                    else max(best_remaining_stamina, next_state.remaining_stamina)
+                )
+                current_state_key = _state_key(current_state)
+                next_state_key = _state_key(next_state)
+                previous_parent = parent_by_state_key.get(next_state_key)
+                parent_by_state_key[next_state_key] = (current_state_key, edge_cost)
+                solution_steps = _reconstruct_solution_steps(
+                    graph,
+                    parent_by_state_key,
+                    next_state,
+                )
+
+                if (
+                    not best_solution_steps
+                    or success_path_length == shortest_success_path_length
+                    and next_state.remaining_stamina >= (best_remaining_stamina or next_state.remaining_stamina)
+                ):
+                    best_solution_steps = solution_steps
+
+                if stop_on_first_success:
+                    return StaminaOnlyHC3Analysis(
+                        solvable=True,
+                        explored_states=explored_states,
+                        node_count=len(graph.nodes),
+                        cache_hit=cache_hit,
+                        shortest_success_path_length=shortest_success_path_length,
+                        best_remaining_stamina=best_remaining_stamina,
+                        solution_steps=solution_steps,
+                    )
+
+                if previous_parent is None:
+                    parent_by_state_key.pop(next_state_key, None)
+                else:
+                    parent_by_state_key[next_state_key] = previous_parent
+
+                continue
 
             signature = (
                 next_state.node_id,
@@ -324,13 +451,45 @@ def solve_stamina_only_hc3(
                 continue
 
             best_stamina_by_signature[signature] = next_state.remaining_stamina
+            parent_by_state_key[_state_key(next_state)] = (_state_key(current_state), edge_cost)
             frontier.append(next_state)
 
-    return StaminaOnlyHC3Result(
-        solvable=False,
+    return StaminaOnlyHC3Analysis(
+        solvable=shortest_success_path_length is not None,
         explored_states=explored_states,
         node_count=len(graph.nodes),
         cache_hit=cache_hit,
+        shortest_success_path_length=shortest_success_path_length,
+        best_remaining_stamina=best_remaining_stamina,
+        solution_steps=best_solution_steps,
+    )
+
+
+def solve_stamina_only_hc3(
+    problem: StaminaOnlyHC3Problem,
+    cache: StaminaOnlyHC3GraphCache | None = None,
+) -> StaminaOnlyHC3Result:
+    analysis = _analyze_stamina_only_search(
+        problem,
+        cache=cache,
+        stop_on_first_success=True,
+    )
+    return StaminaOnlyHC3Result(
+        solvable=analysis.solvable,
+        explored_states=analysis.explored_states,
+        node_count=analysis.node_count,
+        cache_hit=analysis.cache_hit,
+    )
+
+
+def analyze_stamina_only_hc3(
+    problem: StaminaOnlyHC3Problem,
+    cache: StaminaOnlyHC3GraphCache | None = None,
+) -> StaminaOnlyHC3Analysis:
+    return _analyze_stamina_only_search(
+        problem,
+        cache=cache,
+        stop_on_first_success=False,
     )
 
 

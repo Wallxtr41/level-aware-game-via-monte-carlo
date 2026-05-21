@@ -6,9 +6,9 @@ import pygame
 
 import baseline_pipeline as bp
 
-MODE = "stamina_only"
+MODE = "stamina_only"  # door_only or stamina_only
 DISPLAY_STATE = "best"  # final or best
-MCMC_STEPS = 300
+MCMC_STEPS = 1000
 RANDOM_SEED = 20
 WINDOW_TITLE = "Baseline MCMC Visualizer"
 
@@ -166,7 +166,7 @@ def generate_display_state():
         random.seed(RANDOM_SEED)
 
     final_state, final_energy, best_state, best_energy, _ = bp.run_baseline_mcmc(
-        energy_function=bp.ENERGY_FUNCTION,
+        energy_function=bp.get_energy_function(),
     )
 
     if DISPLAY_STATE == "final":
