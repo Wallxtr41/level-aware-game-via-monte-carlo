@@ -1,3 +1,4 @@
+from collections import deque
 from pathlib import Path
 import random
 import sys
@@ -5,18 +6,29 @@ import sys
 import pygame
 
 import baseline_pipeline as bp
+from utils.energy_functions import stamina_aware_baseline_energy_breakdown
+from utils.map_analysis import is_walkable, iter_neighbors
 
 MODE = "stamina_only"  # door_only or stamina_only
 DISPLAY_STATE = "best"  # final or best
 MCMC_STEPS = 1000
-RANDOM_SEED = 20
+RANDOM_SEED = None  # Set to None for a fresh random run each time.
 WINDOW_TITLE = "Baseline MCMC Visualizer"
+SHOW_SOLUTION_OVERLAY = True
 
 TILE_SIZE = 16
 SCALE = 3
 TILE_PIXELS = TILE_SIZE * SCALE
 ITEM_SIZE = 12
 ITEM_PIXELS = ITEM_SIZE * SCALE
+OVERLAY_COLORS = (
+    (255, 99, 71),
+    (255, 191, 0),
+    (46, 204, 113),
+    (52, 152, 219),
+    (155, 89, 182),
+    (241, 90, 36),
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 TILES_DIR = BASE_DIR / "tiles"
@@ -132,6 +144,109 @@ def get_item_surface(tiles, item_kind):
     return tiles[f"item_{item_kind}"]
 
 
+def find_semantic_blocked_path(state, source_position, target_position, door_is_active):
+    semantic_positions = {item.position for item in state.items}
+
+    if door_is_active:
+        semantic_positions.add(state.door)
+
+    semantic_positions.discard(source_position)
+    semantic_positions.discard(target_position)
+
+    queue = deque([source_position])
+    parents = {source_position: None}
+
+    while queue:
+        current_position = queue.popleft()
+
+        if current_position == target_position:
+            path = [target_position]
+            cursor = target_position
+
+            while parents[cursor] is not None:
+                cursor = parents[cursor]
+                path.append(cursor)
+
+            path.reverse()
+            return path
+
+        for next_position in iter_neighbors(*current_position):
+            if next_position in parents:
+                continue
+
+            if next_position in semantic_positions:
+                continue
+
+            if not is_walkable(state.grid, next_position[0], next_position[1]):
+                continue
+
+            parents[next_position] = current_position
+            queue.append(next_position)
+
+    return []
+
+
+def get_solution_overlay_paths(state):
+    if bp.GAME_MODE != "stamina_only" or not SHOW_SOLUTION_OVERLAY:
+        return []
+
+    breakdown = stamina_aware_baseline_energy_breakdown(
+        state=state,
+        target_path_length=bp.TARGET_PATH_LENGTH,
+        target_remaining_stamina=bp.TARGET_FINAL_STAMINA,
+    )
+
+    if not breakdown.solution_steps:
+        return []
+
+    segment_paths = []
+    has_key = False
+
+    for step_index in range(len(breakdown.solution_steps) - 1):
+        current_step = breakdown.solution_steps[step_index]
+        next_step = breakdown.solution_steps[step_index + 1]
+        door_is_active = has_key or not state.locked_door
+        path = find_semantic_blocked_path(
+            state,
+            current_step.position,
+            next_step.position,
+            door_is_active=door_is_active,
+        )
+
+        if path:
+            segment_paths.append(path)
+
+        if next_step.kind == "item:key":
+            has_key = True
+
+    return segment_paths
+
+
+def draw_solution_overlay(screen, state):
+    for segment_index, segment_path in enumerate(get_solution_overlay_paths(state)):
+        color = OVERLAY_COLORS[segment_index % len(OVERLAY_COLORS)]
+
+        for cell_index in range(len(segment_path) - 1):
+            current_row, current_col = segment_path[cell_index]
+            next_row, next_col = segment_path[cell_index + 1]
+            start_pos = (
+                current_col * TILE_PIXELS + TILE_PIXELS // 2,
+                current_row * TILE_PIXELS + TILE_PIXELS // 2,
+            )
+            end_pos = (
+                next_col * TILE_PIXELS + TILE_PIXELS // 2,
+                next_row * TILE_PIXELS + TILE_PIXELS // 2,
+            )
+            pygame.draw.line(screen, color, start_pos, end_pos, 6)
+
+        for row_index, col_index in segment_path:
+            center = (
+                col_index * TILE_PIXELS + TILE_PIXELS // 2,
+                row_index * TILE_PIXELS + TILE_PIXELS // 2,
+            )
+            pygame.draw.circle(screen, color, center, 4)
+
+
 def draw_state(screen, tiles, state):
     screen.fill((0, 0, 0))
 
@@ -151,6 +266,8 @@ def draw_state(screen, tiles, state):
         item_y = y + (TILE_PIXELS - ITEM_PIXELS) // 2
         screen.blit(item_surface, (item_x, item_y))
 
+    draw_solution_overlay(screen, state)
+
     start_row, start_col = state.start
     player_x = start_col * TILE_PIXELS + (TILE_PIXELS - ITEM_PIXELS) // 2
     player_y = start_row * TILE_PIXELS + (TILE_PIXELS - ITEM_PIXELS) // 2
@@ -160,30 +277,41 @@ def draw_state(screen, tiles, state):
 def generate_display_state():
     bp.GAME_MODE = MODE
     bp.MCMC_STEPS = MCMC_STEPS
-    bp.RANDOM_SEED = RANDOM_SEED
-
-    if RANDOM_SEED is not None:
-        random.seed(RANDOM_SEED)
+    effective_seed = RANDOM_SEED if RANDOM_SEED is not None else random.randrange(1, 1_000_000_000)
+    bp.RANDOM_SEED = effective_seed
+    random.seed(effective_seed)
 
     final_state, final_energy, best_state, best_energy, _ = bp.run_baseline_mcmc(
         energy_function=bp.get_energy_function(),
     )
 
-    if DISPLAY_STATE == "final":
-        return final_state, final_energy, "final"
+    print("\n[Final state]")
+    print(bp.render_ascii_map(final_state))
+    print(f"Final energy: {final_energy}")
+    print(bp.get_energy_breakdown(final_state))
+    print(bp.get_solution_summary(final_state, label="final"))
 
-    return best_state, best_energy, "best"
+    print("\n[Best state visited]")
+    print(bp.render_ascii_map(best_state))
+    print(f"Best energy: {best_energy}")
+    print(bp.get_energy_breakdown(best_state))
+    print(bp.get_solution_summary(best_state, label="best"))
+
+    if DISPLAY_STATE == "final":
+        return final_state, final_energy, "final", effective_seed
+
+    return best_state, best_energy, "best", effective_seed
 
 
 def main():
     pygame.init()
 
-    state, energy, state_label = generate_display_state()
+    state, energy, state_label, effective_seed = generate_display_state()
     width = len(state.grid[0]) * TILE_PIXELS
     height = len(state.grid) * TILE_PIXELS
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption(
-        f"{WINDOW_TITLE} - mode={MODE} state={state_label} energy={energy}"
+        f"{WINDOW_TITLE} - mode={MODE} state={state_label} energy={energy} seed={effective_seed}"
     )
 
     tiles = load_tiles()

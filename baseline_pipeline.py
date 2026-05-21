@@ -31,7 +31,7 @@ from utils.map_entities import (
 )
 from utils.maze_generation import generate_maze_map
 
-RANDOM_SEED = 5
+RANDOM_SEED = 42 #5
 
 GRID_WIDTH = 15
 GRID_HEIGHT = 15
@@ -154,9 +154,9 @@ def get_energy_breakdown(state: BaselineState) -> str:
     raise ValueError(f"Unknown game mode: {GAME_MODE}")
 
 
-def get_solution_summary(state: BaselineState) -> str:
+def get_solution_summary(state: BaselineState, label: str = "state") -> str:
     if GAME_MODE != "stamina_only":
-        return "Solution summary: not tracked for door_only mode."
+        return f"Solution summary ({label}): not tracked for door_only mode."
 
     breakdown = stamina_aware_baseline_energy_breakdown(
         state=state,
@@ -165,9 +165,9 @@ def get_solution_summary(state: BaselineState) -> str:
     )
 
     if not breakdown.solution_steps:
-        return "Solution summary: no successful stamina-only solution trace available."
+        return f"Solution summary ({label}): no successful stamina-only solution trace available."
 
-    parts = ["Solution summary:"]
+    parts = [f"Solution summary ({label}):"]
 
     for step_index, step in enumerate(breakdown.solution_steps):
         parts.append(
@@ -624,7 +624,7 @@ def run_baseline_mcmc(
     print(render_ascii_map(current_state))
     print(f"Initial energy: {current_energy}")
     print(get_energy_breakdown(current_state))
-    print(get_solution_summary(current_state))
+    print(get_solution_summary(current_state, label="initial"))
     print(f"Mode: {mode_config.name}")
     print(f"Door position: {current_state.door}")
     print(f"Locked door: {current_state.locked_door}")
@@ -678,13 +678,13 @@ def main() -> None:
     print(render_ascii_map(final_state))
     print(f"Final energy: {final_energy}")
     print(get_energy_breakdown(final_state))
-    print(get_solution_summary(final_state))
+    print(get_solution_summary(final_state, label="final"))
     print(f"Final door position: {final_state.door}")
     print("\n[Best state visited]")
     print(render_ascii_map(best_state))
     print(f"Best energy: {best_energy}")
     print(get_energy_breakdown(best_state))
-    print(get_solution_summary(best_state))
+    print(get_solution_summary(best_state, label="best"))
     print(
         "Stats: "
         f"proposals={stats.proposals}, "
