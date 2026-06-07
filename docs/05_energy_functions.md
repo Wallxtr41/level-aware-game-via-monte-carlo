@@ -1,112 +1,101 @@
-# Energy Fonksiyonları
+# Energy Fonksiyonlari
 
-Bu dosya, projedeki energy fonksiyonlarının neyi ölçtüğünü açıklar.
+Bu dosya, projedeki energy fonksiyonlarinin neyi olctugunu aciklar.
 
 ## Neden Energy Var
 
-MCMC zincirinin bir candidate state’i “iyi” ya da “kötü” olarak değerlendirebilmesi için sayısal bir hedef gerekir.
+MCMC zincirinin bir candidate state'i iyi ya da kotu olarak degerlendirebilmesi icin sayisal bir hedef gerekir.
 
 Bu hedefe energy diyoruz.
 
 Genel kural:
-- energy ne kadar düşükse state o kadar iyi
+- energy ne kadar dusukse state o kadar iyi
 
 ## 1. `door_only` Energy
 
-Bu eski baseline energy’dir.
+Bu eski baseline energy'dir.
 
-Formül:
+Formul:
 
-`E = |L - L_target|`
+```text
+E = |L - L_target|
+```
 
 Burada:
-- `L`: `start -> door` en kısa yol uzunluğu
-- `L_target`: hedef path uzunluğu
+- `L`: `start -> door` en kisa yol uzunlugu
+- `L_target`: hedef path uzunlugu
 
-Özellikler:
-- sadece geometrik kısa yol uzunluğuna bakar
+Ozellikler:
+- sadece geometrik kisa yol uzunluguna bakar
 - item, stamina, key gibi semantik bilgi yoktur
 
-Bu yüzden sadece `door_only` mod için uygundur.
+Bu yuzden sadece `door_only` mod icin uygundur.
 
 ## 2. `stamina_only` Baseline Energy
 
-Bu yeni energy, `stamina_only` HC3 analizini kullanır.
+Bu energy, `stamina_only` HC3 analizini kullanir.
 
-Formül:
+Formul:
 
-`E = w_path * |P - P_target| + w_stamina * |S - S_target|`
+```text
+E = w_path * |P - P_target| + w_stamina * |S - S_target|
+```
 
 Burada:
-- `P`: geçerli başarılı çözüm yolları içindeki en kısa başarılı çözüm maliyeti
-- `P_target`: hedef çözüm uzunluğu
-- `S`: başarılı çözümde kapıya varınca elde kalan en iyi stamina
+- `P`: gecerli basarili cozum yollari icindeki en kisa basarili cozum maliyeti
+- `P_target`: hedef cozum uzunlugu
+- `S`: basarili cozumde kapiya varinca elde kalan en iyi stamina
 - `S_target`: hedef final stamina
-- `w_path`: path ağırlığı
-- `w_stamina`: stamina ağırlığı
+- `w_path`: path agirligi
+- `w_stamina`: stamina agirligi
 
-Şu an varsayılanlar:
+Varsayilanlar:
 - `w_path = 1.0`
 - `w_stamina = 1.0`
 
-## `P` Nasıl Hesaplanıyor
+## `P` Nasil Hesaplaniyor
 
-Solver başarılı bir senaryo bulduğunda:
+Solver basarili bir senaryo buldugunda:
 
-`success_path_length = initial_stamina + collected_stamina - remaining_stamina`
+```text
+success_path_length = initial_stamina + collected_stamina - remaining_stamina
+```
 
-Bu değer aslında oyuncunun toplam harcadığı hareket maliyetini temsil eder.
+Bu deger oyuncunun toplam harcadigi hareket maliyetini temsil eder.
 
 Sebep:
-- başlangıçta belli bir stamina ile başlıyoruz
-- yolda stamina item’ları topluyoruz
-- sonunda bir miktar stamina kalıyor
+- baslangicta belli bir stamina ile basliyoruz
+- yolda stamina item'lari topluyoruz
+- sonunda bir miktar stamina kaliyor
 
-Dolayısıyla:
-- elde edilen toplam stamina kaynağı
+Dolayisiyla:
+- elde edilen toplam stamina kaynagi
 - eksi finalde kalan stamina
-- bize yürüyüş maliyetini verir
+- bize yuruyus maliyetini verir
 
-## `S` Nasıl Hesaplanıyor
+## `S` Nasil Hesaplaniyor
 
-Başarılı çözümler arasında:
-- kapıya varıldığında elde kalan en yüksek stamina
+Basarili cozumler arasinda:
+- kapiya varildiginda elde kalan en yuksek stamina
 
-seçilir.
+secilir.
 
-Bu değer, haritanın oyuncuya ne kadar “rahat” bir çözüm sunduğunu ölçmeye yarar.
+Bu deger, haritanin oyuncuya ne kadar rahat bir cozum sundugunu olcmeye yarar.
 
-## Neden İki Terim Var
+## Cozulemez Haritalar
 
-Sadece çözüm uzunluğunu hedeflemek bazen yeterli olmaz.
-
-Örnek:
-- iki harita da aynı çözüm uzunluğuna sahip olabilir
-- ama birinde oyuncu kapıya `0 stamina` ile varır
-- diğerinde `14 stamina` ile varır
-
-Bu iki haritanın hissi farklıdır.
-
-Bu yüzden:
-- path hedefi
-- final stamina hedefi
-
-ayrı ayrı tutulur.
-
-## Çözülemez Haritalar
-
-Eğer solver haritanın çözülemez olduğunu söylerse:
+Eger solver haritanin cozulemez oldugunu soylerse:
 - energy = `infinity`
 
 olur.
 
-Bu sayede MCMC böyle state’leri tercih etmez.
+Bu sayede MCMC boyle state'leri tercih etmez.
 
 ## Energy Breakdown
 
-Kodda sadece toplam energy değil, terimlere ayrılmış hali de üretilir.
+Kodda sadece toplam energy degil, terimlere ayrilmis hali de uretilir.
 
-`stamina_only` modda terminal çıktısında şu alanlar görülür:
+`baseline` stamina modelinde terminal ciktisinda su alanlar gorulur:
 - `target_path`
 - `path`
 - `path_term`
@@ -115,16 +104,85 @@ Kodda sadece toplam energy değil, terimlere ayrılmış hali de üretilir.
 - `stamina_term`
 - `total`
 
-Bu debug açısından çok yararlıdır.
+## 3. Agent Difficulty Energy
 
-## Şu Anki Sınırlılık
+Detayli ajan davranisi ve sample propagation aciklamasi icin:
+- [08_agent_difficulty_model.md](08_agent_difficulty_model.md)
 
-Bu baseline energy henüz şu tür ek terimleri içermiyor:
-- key’e olan mesafe için özel ceza
-- ilk stamina item’a erişim baskısı
-- exploration baskısı
-- dead-end sayısı
-- fazla kolaylık / fazla bolluk cezası
+Yeni agent difficulty energy sadece ajan tabanli zorluk terimini kullanir. Bu modelde `target_path` ve `target_final_stamina` energy hesabina girmez.
 
-Yani mevcut energy, iyi bir baseline’dır ama nihai difficulty modeli değildir.
+Formul:
+
+```text
+E = w_difficulty * |D_agent - D_target|
+```
+
+Burada:
+- `D_agent`: segment ajan simulasyonlarindan tahmin edilen zorluk
+- `D_target`: hedef zorluk
+- `w_difficulty`: difficulty teriminin agirligi
+
+`baseline_pipeline.py` icindeki ilgili parametreler:
+- `TARGET_AGENT_DIFFICULTY`
+- `AGENT_DIFFICULTY_WEIGHT`
+- `AGENTS_PER_SEGMENT`
+- `AGENT_DIFFICULTY_SEED`
+
+## Agent Difficulty Nasil Hesaplaniyor
+
+Once HC3 semantic graph uzerinden door'a giden tum simple semantic planlar cikarilir.
+
+Ornek planlar:
+- `start -> door`
+- `start -> item:key -> door`
+- `start -> item:stamina -> item:key -> door`
+
+Exact olarak cozulemeyen planlar da listede kalir. Bu planlar icin ajan calistirilmaz ve plan success rate `0` kabul edilir.
+
+Exact olarak cozulebilen planlarda her plan segmenti icin ajanlar calistirilir.
+
+Ornek segmentler:
+- `start -> item:key`
+- `item:key -> item:stamina`
+- `item:stamina -> door`
+
+Her segmentte ajanlar:
+- hedef node'a ulasmaya calisir
+- diger semantic node'lari duvar gibi gorur
+- mumkunse daha once basmadigi hucreleri secer
+- seceneklerin hepsi ziyaret edildiyse geriye donmek yerine baska ziyaret edilmis secenekleri dener
+- sadece cikmaz sokakta mecburen geri doner
+- stamina biterse basarisiz olur
+
+Her segment icin tutulan metrikler:
+- success rate
+- kalan stamina ornekleri
+- ortalama adim sayisi
+- ortalama revisit sayisi
+- ortalama forced backtrack sayisi
+
+Bir segment basarili oldugunda, hedef node stamina item ise kalan stamina'ya item degeri eklenir. Bu ornekler sonraki segmentin baslangic stamina dagilimi olarak kullanilir.
+
+Plan basari orani, segment basari oranlarinin carpimidir.
+
+Map seviyesinde:
+
+```text
+D_agent = 1 - average_plan_success_rate
+```
+
+Yani door'a giden tum semantic planlarin ortalama gecilme orani dusukse harita daha zor kabul edilir.
+
+## Deterministic Randomness
+
+Ajanlar stochastic davranir ama ayni state ayni energy degerini uretmelidir.
+
+Bu yuzden ajan simulasyonlarinda kullanilan random seed:
+- global agent seed
+- plan node sirasi
+- segment source/target bilgisi
+
+uzerinden deterministik uretilir.
+
+Bu sayede ayni harita tekrar degerlendirildiginde ayni agent difficulty sonucu alinir.
 

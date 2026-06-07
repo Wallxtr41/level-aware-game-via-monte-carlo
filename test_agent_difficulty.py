@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import unittest
+
+from utils.agent_difficulty import (
+    AgentDifficultyConfig,
+    enumerate_semantic_solution_plans,
+    estimate_agent_difficulty,
+)
+from utils.hard_constraints import StaminaOnlyHC3Problem
+from utils.map_entities import ItemPlacement
+
+
+def grid_from_rows(*rows: str) -> list[list[int]]:
+    return [[0 if cell == "." else 1 for cell in row] for row in rows]
+
+
+class AgentDifficultyTests(unittest.TestCase):
+    def test_enumerates_multiple_semantic_solution_plans(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#.###.#",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(1, 5),
+            items=(
+                ItemPlacement(kind="stamina", position=(3, 1), value=4),
+            ),
+            initial_stamina=10,
+            locked_door=False,
+        )
+
+        plans = enumerate_semantic_solution_plans(problem)
+        plan_kinds = {tuple(step.kind for step in plan.steps) for plan in plans}
+
+        self.assertIn(("start", "door"), plan_kinds)
+        self.assertIn(("start", "item:stamina", "door"), plan_kinds)
+
+    def test_stamina_item_effect_is_propagated_to_next_segment(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#########",
+                "#.......#",
+                "#########",
+            ),
+            start=(1, 1),
+            door=(1, 7),
+            items=(ItemPlacement(kind="stamina", position=(1, 3), value=4),),
+            initial_stamina=3,
+            locked_door=False,
+        )
+
+        summary = estimate_agent_difficulty(
+            problem,
+            config=AgentDifficultyConfig(agents_per_segment=10, random_seed=1),
+        )
+        best_plan = max(
+            summary.plan_summaries,
+            key=lambda plan_summary: plan_summary.estimated_success_rate,
+        )
+
+        self.assertEqual(
+            tuple(step.kind for step in best_plan.plan.steps),
+            ("start", "item:stamina", "door"),
+        )
+        self.assertTrue(best_plan.final_stamina_samples)
+        self.assertTrue(all(stamina >= 0 for stamina in best_plan.final_stamina_samples))
+
+    def test_unsolved_semantic_plan_is_counted_as_zero_success(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#.###.#",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(1, 5),
+            items=(ItemPlacement(kind="key", position=(3, 1), value=0),),
+            initial_stamina=20,
+            locked_door=True,
+        )
+
+        plans = enumerate_semantic_solution_plans(problem)
+        plan_by_kinds = {
+            tuple(step.kind for step in plan.steps): plan
+            for plan in plans
+        }
+
+        self.assertFalse(plan_by_kinds[("start", "door")].semantic_success)
+        self.assertTrue(plan_by_kinds[("start", "item:key", "door")].semantic_success)
+
+        summary = estimate_agent_difficulty(
+            problem,
+            config=AgentDifficultyConfig(agents_per_segment=10, random_seed=5),
+        )
+
+        self.assertGreater(summary.best_plan_success_rate, summary.average_plan_success_rate)
+
+    def test_locked_inactive_door_is_transit_inside_agent_segment(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "########",
+                "#......#",
+                "########",
+            ),
+            start=(1, 1),
+            door=(1, 3),
+            items=(ItemPlacement(kind="key", position=(1, 6), value=0),),
+            initial_stamina=10,
+            locked_door=True,
+        )
+
+        summary = estimate_agent_difficulty(
+            problem,
+            config=AgentDifficultyConfig(agents_per_segment=10, random_seed=7),
+        )
+        key_plan = next(
+            plan_summary
+            for plan_summary in summary.plan_summaries
+            if tuple(step.kind for step in plan_summary.plan.steps) == ("start", "item:key", "door")
+        )
+
+        self.assertEqual(key_plan.segment_summaries[0].success_rate, 1.0)
+
+    def test_agent_difficulty_is_deterministic_for_same_problem_and_config(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#.###.#",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(3, 5),
+            items=(ItemPlacement(kind="stamina", position=(3, 1), value=3),),
+            initial_stamina=10,
+            locked_door=False,
+        )
+        config = AgentDifficultyConfig(agents_per_segment=20, random_seed=99)
+
+        first = estimate_agent_difficulty(problem, config=config)
+        second = estimate_agent_difficulty(problem, config=config)
+
+        self.assertEqual(first.difficulty_score, second.difficulty_score)
+        self.assertEqual(first.best_plan_success_rate, second.best_plan_success_rate)
+
+
+if __name__ == "__main__":
+    unittest.main()

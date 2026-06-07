@@ -4,6 +4,11 @@ from dataclasses import dataclass
 import math
 from typing import Callable, Protocol
 
+from utils.agent_difficulty import (
+    AgentDifficultyConfig,
+    AgentDifficultySummary,
+    estimate_agent_difficulty,
+)
 from utils.hard_constraints import (
     StaminaOnlyHC3GraphCache,
     StaminaOnlyHC3Problem,
@@ -38,6 +43,11 @@ class EnergyBreakdown:
     remaining_stamina_target: int | None = None
     remaining_stamina_actual: int | None = None
     remaining_stamina_term: float | None = None
+    agent_difficulty_target: float | None = None
+    agent_difficulty_actual: float | None = None
+    agent_difficulty_term: float | None = None
+    agent_success_rate: float | None = None
+    agent_difficulty_summary: AgentDifficultySummary | None = None
     solution_steps: tuple[StaminaOnlySolutionStep, ...] = ()
 
 
@@ -142,6 +152,70 @@ def make_stamina_aware_baseline_energy(
             target_remaining_stamina=target_remaining_stamina,
             path_weight=path_weight,
             stamina_weight=stamina_weight,
+        )
+
+    return energy_function
+
+
+def stamina_agent_difficulty_energy(
+    state: StaminaAwareEnergyState,
+    target_agent_difficulty: float = 0.5,
+    difficulty_weight: float = 20.0,
+    agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
+) -> float:
+    breakdown = stamina_agent_difficulty_energy_breakdown(
+        state=state,
+        target_agent_difficulty=target_agent_difficulty,
+        difficulty_weight=difficulty_weight,
+        agent_config=agent_config,
+    )
+    return breakdown.total_energy
+
+
+def stamina_agent_difficulty_energy_breakdown(
+    state: StaminaAwareEnergyState,
+    target_agent_difficulty: float = 0.5,
+    difficulty_weight: float = 20.0,
+    agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
+) -> EnergyBreakdown:
+    difficulty_summary = estimate_agent_difficulty(
+        problem=StaminaOnlyHC3Problem(
+            grid=state.grid,
+            start=state.start,
+            door=state.door,
+            items=state.items,
+            initial_stamina=state.initial_stamina,
+            locked_door=state.locked_door,
+        ),
+        config=agent_config,
+        cache=STAMINA_ENERGY_CACHE,
+    )
+    difficulty_term = difficulty_weight * abs(
+        difficulty_summary.difficulty_score - target_agent_difficulty
+    )
+
+    return EnergyBreakdown(
+        mode="stamina_agent_difficulty",
+        total_energy=difficulty_term,
+        agent_difficulty_target=target_agent_difficulty,
+        agent_difficulty_actual=difficulty_summary.difficulty_score,
+        agent_difficulty_term=difficulty_term,
+        agent_success_rate=difficulty_summary.average_plan_success_rate,
+        agent_difficulty_summary=difficulty_summary,
+    )
+
+
+def make_stamina_agent_difficulty_energy(
+    target_agent_difficulty: float = 0.5,
+    difficulty_weight: float = 20.0,
+    agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
+) -> Callable[[StaminaAwareEnergyState], float]:
+    def energy_function(state: StaminaAwareEnergyState) -> float:
+        return stamina_agent_difficulty_energy(
+            state=state,
+            target_agent_difficulty=target_agent_difficulty,
+            difficulty_weight=difficulty_weight,
+            agent_config=agent_config,
         )
 
     return energy_function

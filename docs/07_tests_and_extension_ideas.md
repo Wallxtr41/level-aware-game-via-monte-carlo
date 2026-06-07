@@ -5,6 +5,7 @@ Bu dosya, mevcut doğrulama yaklaşımını ve ileride geliştirilebilecek yönl
 ## Mevcut Testler
 
 Önemli test dosyaları:
+- [test_agent_difficulty.py](../test_agent_difficulty.py)
 - [test_hc3_stamina_only_solver.py](../test_hc3_stamina_only_solver.py)
 - [test_hc3_solver.py](../test_hc3_solver.py)
 - [test_hard_constraints.py](../test_hard_constraints.py)
@@ -16,6 +17,17 @@ Temel olarak şu davranışlar test edilir:
 - yetersiz stamina veya mantıksız yerleşim nedeniyle çözülemez durum
 - semantic node’ların üstünden fark edilmeden geçilmeme mantığı
 - graph cache kullanımının doğru çalışması
+
+## Agent Difficulty Testlerinde Ne Kontrol Ediliyor
+
+Ajan modelinin detaylı algoritmik açıklaması:
+- [08_agent_difficulty_model.md](08_agent_difficulty_model.md)
+
+`test_agent_difficulty.py` şu davranışları kontrol eder:
+- birden fazla semantic door plan çıkarılabiliyor mu
+- exact çözülemeyen semantic planlar success rate `0` olarak ortalamaya katılıyor mu
+- stamina item hedef node olduğunda item etkisi sonraki segment başlangıcına taşınıyor mu
+- aynı problem ve aynı config ile agent difficulty sonucu deterministic kalıyor mu
 
 ## Terminal Debug Bilgileri
 
@@ -34,6 +46,7 @@ Bu çıktı, semantic çözüm adımlarını listeler:
 
 - `stamina_only` HC3 exact çözücüye sahip
 - energy artık semantik yapıyı hissediyor
+- agent difficulty energy ile segment bazlı zorluk tahmini yapılabiliyor
 - proposal seti sadece topology değil item ve door hareketlerini de içeriyor
 - görselleştirme tarafında çözüm overlay’i var
 
@@ -45,8 +58,14 @@ Bu çıktı, semantic çözüm adımlarını listeler:
 ### 2. Proposal ağırlıkları uniform
 Belki ileride weighted move selection daha iyi davranabilir.
 
-### 3. Energy hâlâ baseline seviyede
-Difficulty model daha zengin hale getirilebilir.
+### 3. Difficulty model hâlâ ilk sürüm
+Agent difficulty şu an door'a giden tüm semantic planların ortalama başarı oranını temel alıyor.
+
+İleride:
+- segment revisit / backtrack baskısı
+- başarısız segmentlerin stamina kayıp profili
+
+energy'ye ayrıca eklenebilir.
 
 ### 4. Full oyun modeli henüz tamamlanmadı
 Şu an:
@@ -67,6 +86,7 @@ Başlangıç state üretimini daha kontrollü hale getirmek.
 - ilk stamina item’a erişim zorluğu
 - exploration baskısı
 - fazla güvenli çözümlere ceza
+- agent revisit / forced backtrack terimleri
 
 ### 3. Proposal dağılımını ağırlıklı yapmak
 Örneğin:
@@ -84,4 +104,3 @@ Başlangıç state üretimini daha kontrollü hale getirmek.
 - çok kaynaklı tradeoff
 
 eklenirse, daha genel resource-aware solver devreye alınabilir.
-

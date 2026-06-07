@@ -16,9 +16,9 @@ Okuma sırası önerisi:
 4. [04_baseline_pipeline_and_mcmc.md](04_baseline_pipeline_and_mcmc.md)
 5. [05_energy_functions.md](05_energy_functions.md)
 6. [06_visualization_and_solution_overlay.md](06_visualization_and_solution_overlay.md)
-7. [07_tests_and_extension_ideas.md](07_tests_and_extension_ideas.md)
+7. [08_agent_difficulty_model.md](08_agent_difficulty_model.md)
+8. [07_tests_and_extension_ideas.md](07_tests_and_extension_ideas.md)
 
 İlgili ek dokümanlar:
 - [proposal/hc3_formalization.md](../proposal/hc3_formalization.md): daha genel HC3 fikri
 - [proposal/stamina_only_hc3_model.md](../proposal/stamina_only_hc3_model.md): sade stamina-only modelin formal açıklaması
-

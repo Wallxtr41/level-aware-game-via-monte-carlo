@@ -290,12 +290,14 @@ def generate_display_state():
     print(f"Final energy: {final_energy}")
     print(bp.get_energy_breakdown(final_state))
     print(bp.get_solution_summary(final_state, label="final"))
+    print(bp.get_agent_difficulty_summary(final_state, label="final"))
 
     print("\n[Best state visited]")
     print(bp.render_ascii_map(best_state))
     print(f"Best energy: {best_energy}")
     print(bp.get_energy_breakdown(best_state))
     print(bp.get_solution_summary(best_state, label="best"))
+    print(bp.get_agent_difficulty_summary(best_state, label="best"))
 
     if DISPLAY_STATE == "final":
         return final_state, final_energy, "final", effective_seed

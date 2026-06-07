@@ -6,9 +6,12 @@ import random
 from typing import Callable
 
 from utils.energy_functions import (
+    AgentDifficultyConfig,
     make_path_length_energy,
+    make_stamina_agent_difficulty_energy,
     make_stamina_aware_baseline_energy,
     path_length_energy_breakdown,
+    stamina_agent_difficulty_energy_breakdown,
     stamina_aware_baseline_energy_breakdown,
 )
 from utils.hard_constraints import (
@@ -38,9 +41,14 @@ GRID_HEIGHT = 15
 START_POS = (1, 1)
 TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
+TARGET_AGENT_DIFFICULTY = 0.5
+AGENT_DIFFICULTY_WEIGHT = 20.0
+AGENTS_PER_SEGMENT = 30
+AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
 MAX_ITEM_PLACEMENT_ATTEMPTS = 100
 GAME_MODE = "stamina_only"  # "door_only" or "stamina_only"
+STAMINA_ENERGY_MODEL = "agent_difficulty"  # "baseline" or "agent_difficulty"
 
 MCMC_STEPS = 1000
 TEMPERATURE = 2.0
@@ -53,9 +61,18 @@ Position = tuple[int, int]
 EnergyFunction = Callable[["BaselineState"], float]
 HC3_CACHE = StaminaOnlyHC3GraphCache()
 DOOR_ONLY_ENERGY_FUNCTION = make_path_length_energy(TARGET_PATH_LENGTH)
+AGENT_DIFFICULTY_CONFIG = AgentDifficultyConfig(
+    agents_per_segment=AGENTS_PER_SEGMENT,
+    random_seed=AGENT_DIFFICULTY_SEED,
+)
 STAMINA_ONLY_ENERGY_FUNCTION = make_stamina_aware_baseline_energy(
     target_path_length=TARGET_PATH_LENGTH,
     target_remaining_stamina=TARGET_FINAL_STAMINA,
+)
+STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
+    target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
+    difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+    agent_config=AGENT_DIFFICULTY_CONFIG,
 )
 
 
@@ -81,9 +98,9 @@ MODE_CONFIGS = {
     "stamina_only": ModeConfig(
         name="stamina_only",
         uses_stamina_solver=True,
-        initial_stamina=40,
+        initial_stamina=  20,#TARGET_PATH_LENGTH + TARGET_FINAL_STAMINA - 2* 6,  # Start with enough stamina to reach the door, then optimize from there.
         locked_door=True,
-        item_kinds=("stamina", "stamina", "key"),
+        item_kinds=("key",), #"stamina", "stamina", 
         proposal_move_types=("topology", "item_move", "door_move"),
     ),
 }
@@ -117,6 +134,12 @@ def get_energy_function() -> EnergyFunction:
         return DOOR_ONLY_ENERGY_FUNCTION
 
     if GAME_MODE == "stamina_only":
+        if STAMINA_ENERGY_MODEL == "agent_difficulty":
+            return STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION
+
+        if STAMINA_ENERGY_MODEL != "baseline":
+            raise ValueError(f"Unknown stamina energy model: {STAMINA_ENERGY_MODEL}")
+
         return STAMINA_ONLY_ENERGY_FUNCTION
 
     raise ValueError(f"Unknown game mode: {GAME_MODE}")
@@ -136,6 +159,21 @@ def get_energy_breakdown(state: BaselineState) -> str:
         )
 
     if GAME_MODE == "stamina_only":
+        if STAMINA_ENERGY_MODEL == "agent_difficulty":
+            breakdown = stamina_agent_difficulty_energy_breakdown(
+                state=state,
+                target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
+                difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+                agent_config=AGENT_DIFFICULTY_CONFIG,
+            )
+            return (
+                f"target_agent_difficulty={breakdown.agent_difficulty_target} "
+                f"agent_difficulty={breakdown.agent_difficulty_actual} "
+                f"average_agent_success_rate={breakdown.agent_success_rate} "
+                f"agent_difficulty_term={breakdown.agent_difficulty_term} "
+                f"total={breakdown.total_energy}"
+            )
+
         breakdown = stamina_aware_baseline_energy_breakdown(
             state=state,
             target_path_length=TARGET_PATH_LENGTH,
@@ -152,6 +190,57 @@ def get_energy_breakdown(state: BaselineState) -> str:
         )
 
     raise ValueError(f"Unknown game mode: {GAME_MODE}")
+
+
+def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> str:
+    if GAME_MODE != "stamina_only" or STAMINA_ENERGY_MODEL != "agent_difficulty":
+        return f"Agent difficulty summary ({label}): not enabled."
+
+    breakdown = stamina_agent_difficulty_energy_breakdown(
+        state=state,
+        target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
+        difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+        agent_config=AGENT_DIFFICULTY_CONFIG,
+    )
+    summary = breakdown.agent_difficulty_summary
+
+    if summary is None:
+        return f"Agent difficulty summary ({label}): unavailable."
+
+    parts = [
+        f"Agent difficulty summary ({label}):",
+        (
+            f"semantic_plans={summary.semantic_plan_count} "
+            f"simulated_plans={summary.simulated_plan_count} "
+            f"average_success_rate={summary.average_plan_success_rate:.3f} "
+            f"best_success_rate={summary.best_plan_success_rate:.3f} "
+            f"difficulty={summary.difficulty_score:.3f}"
+        ),
+    ]
+
+    if not summary.plan_summaries:
+        return "\n".join(parts)
+
+    best_plan = max(
+        summary.plan_summaries,
+        key=lambda plan_summary: plan_summary.estimated_success_rate,
+    )
+    plan_kinds = " -> ".join(step.kind for step in best_plan.plan.steps)
+    parts.append(
+        f"best_plan={plan_kinds} estimated_success_rate={best_plan.estimated_success_rate:.3f}"
+    )
+
+    for segment_index, segment in enumerate(best_plan.segment_summaries):
+        parts.append(
+            f"segment={segment_index} {segment.source_position}->{segment.target_position} "
+            f"success_rate={segment.success_rate:.3f} "
+            f"avg_steps={segment.average_steps:.2f} "
+            f"avg_revisits={segment.average_revisits:.2f} "
+            f"avg_backtracks={segment.average_forced_backtracks:.2f} "
+            f"avg_success_stamina={segment.average_success_remaining_stamina:.2f}"
+        )
+
+    return "\n".join(parts)
 
 
 def get_solution_summary(state: BaselineState, label: str = "state") -> str:
@@ -625,7 +714,9 @@ def run_baseline_mcmc(
     print(f"Initial energy: {current_energy}")
     print(get_energy_breakdown(current_state))
     print(get_solution_summary(current_state, label="initial"))
+    print(get_agent_difficulty_summary(current_state, label="initial"))
     print(f"Mode: {mode_config.name}")
+    print(f"Stamina energy model: {STAMINA_ENERGY_MODEL}")
     print(f"Door position: {current_state.door}")
     print(f"Locked door: {current_state.locked_door}")
     print(f"Initial stamina: {current_state.initial_stamina}")
@@ -679,12 +770,14 @@ def main() -> None:
     print(f"Final energy: {final_energy}")
     print(get_energy_breakdown(final_state))
     print(get_solution_summary(final_state, label="final"))
+    print(get_agent_difficulty_summary(final_state, label="final"))
     print(f"Final door position: {final_state.door}")
     print("\n[Best state visited]")
     print(render_ascii_map(best_state))
     print(f"Best energy: {best_energy}")
     print(get_energy_breakdown(best_state))
     print(get_solution_summary(best_state, label="best"))
+    print(get_agent_difficulty_summary(best_state, label="best"))
     print(
         "Stats: "
         f"proposals={stats.proposals}, "

@@ -24,8 +24,8 @@ ITEM_SIZE = 12
 ITEM_PIXELS = ITEM_SIZE * SCALE
 
 HUD_HEIGHT = 72
-FOG_RADIUS = 2
-MCMC_STEPS = 1000
+FOG_RADIUS = 1
+MCMC_STEPS = 500
 REPLAY_FRAMES_PER_STEP = 6   # replay hizi: her N frame'de 1 adim
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -251,6 +251,16 @@ def generate_game_state():
         energy_function=bp.get_energy_function(),
     )
     print(f"[play_maze] Labirent hazir. Enerji={best_energy:.2f}")
+    print("\n[play_maze] Best state visited")
+    print(bp.render_ascii_map(best_state))
+    print(f"Best energy: {best_energy}")
+    print(bp.get_energy_breakdown(best_state))
+    print(bp.get_solution_summary(best_state, label="best"))
+    print(bp.get_agent_difficulty_summary(best_state, label="best"))
+    print(f"Best door position: {best_state.door}")
+    print(f"Best locked door: {best_state.locked_door}")
+    print(f"Best initial stamina: {best_state.initial_stamina}")
+    print(f"Best items: {[(item.kind, item.position, item.value) for item in best_state.items]}")
 
     player_pos = best_state.start
     visible = compute_visible_cells(best_state.grid, player_pos, FOG_RADIUS)
