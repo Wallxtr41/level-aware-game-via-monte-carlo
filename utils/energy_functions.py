@@ -47,6 +47,10 @@ class EnergyBreakdown:
     agent_difficulty_actual: float | None = None
     agent_difficulty_term: float | None = None
     agent_success_rate: float | None = None
+    segment_balance_penalty: float | None = None
+    segment_balance_term: float | None = None
+    dead_segment_ratio: float | None = None
+    dead_segment_term: float | None = None
     agent_difficulty_summary: AgentDifficultySummary | None = None
     solution_steps: tuple[StaminaOnlySolutionStep, ...] = ()
 
@@ -161,12 +165,16 @@ def stamina_agent_difficulty_energy(
     state: StaminaAwareEnergyState,
     target_agent_difficulty: float = 0.5,
     difficulty_weight: float = 20.0,
+    segment_balance_weight: float = 10.0,
+    dead_segment_weight: float = 10.0,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> float:
     breakdown = stamina_agent_difficulty_energy_breakdown(
         state=state,
         target_agent_difficulty=target_agent_difficulty,
         difficulty_weight=difficulty_weight,
+        segment_balance_weight=segment_balance_weight,
+        dead_segment_weight=dead_segment_weight,
         agent_config=agent_config,
     )
     return breakdown.total_energy
@@ -176,6 +184,8 @@ def stamina_agent_difficulty_energy_breakdown(
     state: StaminaAwareEnergyState,
     target_agent_difficulty: float = 0.5,
     difficulty_weight: float = 20.0,
+    segment_balance_weight: float = 10.0,
+    dead_segment_weight: float = 10.0,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> EnergyBreakdown:
     difficulty_summary = estimate_agent_difficulty(
@@ -191,16 +201,22 @@ def stamina_agent_difficulty_energy_breakdown(
         cache=STAMINA_ENERGY_CACHE,
     )
     difficulty_term = difficulty_weight * abs(
-        difficulty_summary.difficulty_score - target_agent_difficulty
+        difficulty_summary.main_route_difficulty - target_agent_difficulty
     )
+    segment_balance_term = segment_balance_weight * difficulty_summary.segment_success_std
+    dead_segment_term = dead_segment_weight * difficulty_summary.dead_segment_ratio
 
     return EnergyBreakdown(
         mode="stamina_agent_difficulty",
-        total_energy=difficulty_term,
+        total_energy=difficulty_term + segment_balance_term + dead_segment_term,
         agent_difficulty_target=target_agent_difficulty,
-        agent_difficulty_actual=difficulty_summary.difficulty_score,
+        agent_difficulty_actual=difficulty_summary.main_route_difficulty,
         agent_difficulty_term=difficulty_term,
-        agent_success_rate=difficulty_summary.average_plan_success_rate,
+        agent_success_rate=difficulty_summary.main_route_success_rate,
+        segment_balance_penalty=difficulty_summary.segment_success_std,
+        segment_balance_term=segment_balance_term,
+        dead_segment_ratio=difficulty_summary.dead_segment_ratio,
+        dead_segment_term=dead_segment_term,
         agent_difficulty_summary=difficulty_summary,
     )
 
@@ -208,6 +224,8 @@ def stamina_agent_difficulty_energy_breakdown(
 def make_stamina_agent_difficulty_energy(
     target_agent_difficulty: float = 0.5,
     difficulty_weight: float = 20.0,
+    segment_balance_weight: float = 10.0,
+    dead_segment_weight: float = 10.0,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> Callable[[StaminaAwareEnergyState], float]:
     def energy_function(state: StaminaAwareEnergyState) -> float:
@@ -215,6 +233,8 @@ def make_stamina_agent_difficulty_energy(
             state=state,
             target_agent_difficulty=target_agent_difficulty,
             difficulty_weight=difficulty_weight,
+            segment_balance_weight=segment_balance_weight,
+            dead_segment_weight=dead_segment_weight,
             agent_config=agent_config,
         )
 

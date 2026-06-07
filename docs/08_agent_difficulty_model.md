@@ -356,35 +356,79 @@ Bu durumda o plan icin ajan calistirilmez, ama plan map-level ortalamaya `0` ola
 
 Bir haritada birden fazla semantic door plan olabilir.
 
-Her plan simule edilir.
+Exact cozulebilen planlar simule edilir.
 
 Exact cozulemeyen planlar:
 - simule edilmez
-- success rate `0` kabul edilir
-- ortalamaya dahil edilir
+- main route success ortalamasina dahil edilmez
+- dead segment hesabina dahil edilir
 
-Map seviyesinde tum planlarin ortalama success rate'i kullanilir:
+Ana route seviyesinde sadece exact cozulebilen planlarin ortalama success rate'i kullanilir:
 
 ```text
-average_plan_success_rate = average(plan_success_rates)
+main_route_success_rate = average(success rates of exact solvable plans)
 ```
 
 Difficulty:
 
 ```text
-difficulty_score = 1 - average_plan_success_rate
+main_route_difficulty = 1 - main_route_success_rate
 ```
 
 Yorum:
-- door'a giden planlarin buyuk kismi kolay geciliyorsa difficulty dusuk olur
-- door'a giden planlarin buyuk kismi basarisiz ya da zor ise difficulty yuksek olur
-- exact cozulemeyen semantic planlar difficulty'yi artirir
+- cozulebilen route'lar kolay geciliyorsa main route difficulty dusuk olur
+- cozulebilen route'lar zor geciliyorsa main route difficulty yuksek olur
+- exact dead planlar bu ana ortalamayi bozmaz
 
-Bu, onceki `best plan` yaklasimindan farklidir. Artik tek kolay plan tum haritayi kolay gostermeye yetmez; tum semantic door denemeleri ortalamaya katilir.
+## Segment Balance
 
-Ileride su alternatifler eklenebilir:
-- best plan ile second-best plan farki
-- revisit/backtrack agirlikli zorluk
+Main route difficulty tek basina yeterli degildir. Ornek:
+
+```text
+start -> key success = 1.0
+key -> door success = 0.5
+route success = 0.5
+```
+
+Bu route hedef difficulty'ye denk gelebilir ama zorluk tek segmente yigilmistir.
+
+Bu nedenle unique basarili segmentlerin success rate standart sapmasi hesaplanir:
+
+```text
+segment_success_std = std(unique successful segment success rates)
+```
+
+Segment ayni source-target ciftinde birden fazla route icinde gecerse tek unique segment olarak ele alinir. Birden fazla olcum varsa o segmentin ortalama success rate'i kullanilir.
+
+Yorum:
+- `segment_success_std` dusukse zorluk dengeli dagilmis demektir
+- `segment_success_std` yuksekse bazi segmentler cok kolay, bazilari cok zor demektir
+
+## Dead Segment Ratio
+
+Exact cozulemeyen full route'lari dogrudan tek tek cezalandirmak ayni kok problemi fazla sayabilir.
+
+Ornek:
+
+```text
+start -> S1 basarisiz
+start -> S1 -> key -> door dead
+start -> S1 -> S2 -> key -> door dead
+```
+
+Bu durumda asil problem `start -> S1` segmentidir. Bu yuzden deadness unique segment seviyesinde sayilir:
+
+```text
+dead_segment_ratio = dead_unique_segments / all_unique_segments
+```
+
+Buradaki `all_unique_segments` tum suffix route parcalarini kapsamaz. Sadece:
+- agent tarafindan gercekten simule edilen segmentler
+- exact cozulemeyen planlarda ilk basarisiz semantic segment
+
+dahil edilir.
+
+Bir segment herhangi bir simule edilen route icinde `success_rate > 0` uretiyorsa dead sayilmaz. Hic basarili ornegi yoksa dead segment olarak sayilir.
 
 ## Deterministic Randomness
 
@@ -441,13 +485,16 @@ Bu sayede ayni state tekrar degerlendirilirse ajan simulasyonu yeniden calismaz.
 Agent difficulty energy su formulu kullanir:
 
 ```text
-E = difficulty_weight * abs(agent_difficulty - target_agent_difficulty)
+E =
+  difficulty_weight * abs(main_route_difficulty - target_agent_difficulty)
+  + segment_balance_weight * segment_success_std
+  + dead_segment_weight * dead_segment_ratio
 ```
 
 Burada:
 
 ```text
-agent_difficulty = 1 - average_plan_success_rate
+main_route_difficulty = 1 - main_route_success_rate
 ```
 
 Pipeline parametreleri:
@@ -456,6 +503,8 @@ Pipeline parametreleri:
 STAMINA_ENERGY_MODEL = "agent_difficulty"
 TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 20.0
+SEGMENT_BALANCE_WEIGHT = 10.0
+DEAD_SEGMENT_WEIGHT = 10.0
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 ```
@@ -476,9 +525,13 @@ Agent difficulty acikken energy breakdown icinde su alanlar gorunur:
 
 ```text
 target_agent_difficulty
-agent_difficulty
-average_agent_success_rate
-agent_difficulty_term
+main_route_difficulty
+main_route_success_rate
+main_route_term
+segment_success_std
+segment_balance_term
+dead_segment_ratio
+dead_segment_term
 ```
 
 Ayrica `Agent difficulty summary` blogu basilir.
@@ -487,7 +540,7 @@ Ornek:
 
 ```text
 Agent difficulty summary (best):
-semantic_plans=10 simulated_plans=4 average_success_rate=0.032 best_success_rate=0.060 difficulty=0.968
+semantic_plans=10 simulated_plans=4 main_route_success_rate=0.080 best_success_rate=0.120 main_route_difficulty=0.920 segment_success_std=0.210 dead_segment_ratio=0.300 dead_segments=3/10
 best_plan=start -> item:key -> item:stamina -> door estimated_success_rate=0.060
 segment=0 (1, 1)->(5, 9) success_rate=0.800 avg_steps=33.87 avg_revisits=3.03 avg_backtracks=0.60 avg_success_stamina=20.17
 segment=1 (5, 9)->(7, 13) success_rate=0.133 avg_steps=15.87 avg_revisits=0.87 avg_backtracks=0.10 avg_success_stamina=26.00
@@ -498,16 +551,19 @@ Bu cikti segment bazinda zorlugun nereden geldigini okumayi saglar.
 Burada:
 - `semantic_plans`: door'a giden tum simple semantic plan sayisi
 - `simulated_plans`: exact olarak cozulebildigi icin ajan calistirilan plan sayisi
-- `average_success_rate`: tum semantic planlarin ortalama success rate'i
+- `main_route_success_rate`: exact cozulebilen planlarin ortalama success rate'i
 - `best_success_rate`: en yuksek success rate'e sahip planin orani
+- `segment_success_std`: unique basarili segment success rate'lerinin standart sapmasi
+- `dead_segment_ratio`: unique dead segment orani
 
 ## Mevcut Sinirlilik
 
 Bu model ilk surumdur.
 
 Su an:
-- tum door-ending semantic planlar difficulty skoru icin kullanilir
-- exact cozulemeyen semantic planlar success rate `0` olarak ortalamaya katilir
+- exact cozulebilen door-ending semantic planlar main route difficulty icin kullanilir
+- exact cozulemeyen semantic planlar dead segment ratio ile temsil edilir
+- unique basarili segmentler segment balance icin kullanilir
 - revisit ve forced backtrack metrikleri energy'ye dogrudan eklenmez
 - ajanlar sadece local segment davranisi simule eder
 

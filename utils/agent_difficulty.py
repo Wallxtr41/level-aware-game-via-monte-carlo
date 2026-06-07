@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import math
 import random
 from typing import Iterable
 
@@ -110,6 +111,12 @@ class AgentDifficultySummary:
     average_plan_success_rate: float
     best_plan_success_rate: float
     difficulty_score: float
+    main_route_success_rate: float
+    main_route_difficulty: float
+    segment_success_std: float
+    dead_segment_count: int
+    unique_segment_count: int
+    dead_segment_ratio: float
     plan_summaries: tuple[PlanSimulationSummary, ...]
 
 
@@ -141,6 +148,12 @@ def estimate_agent_difficulty(
             average_plan_success_rate=0.0,
             best_plan_success_rate=0.0,
             difficulty_score=1.0,
+            main_route_success_rate=0.0,
+            main_route_difficulty=1.0,
+            segment_success_std=0.0,
+            dead_segment_count=0,
+            unique_segment_count=0,
+            dead_segment_ratio=0.0,
             plan_summaries=(),
         )
         _DIFFICULTY_CACHE[cache_key] = summary
@@ -159,16 +172,42 @@ def estimate_agent_difficulty(
         (plan_summary.estimated_success_rate for plan_summary in plan_summaries),
         default=0.0,
     )
-    average_success_rate = _average(
-        plan_summary.estimated_success_rate for plan_summary in plan_summaries
+    solvable_success_rates = tuple(
+        plan_summary.estimated_success_rate
+        for plan_summary in plan_summaries
+        if plan_summary.plan.semantic_success
+    )
+    main_route_success_rate = _average(solvable_success_rates)
+    main_route_difficulty = 1.0 - main_route_success_rate
+    successful_segment_rates_by_key = _get_successful_segment_rates_by_key(plan_summaries)
+    unique_successful_segment_rates = tuple(
+        _average(segment_rates)
+        for segment_rates in successful_segment_rates_by_key.values()
+    )
+    segment_success_std = _standard_deviation(unique_successful_segment_rates)
+    unique_segment_keys = _get_unique_segment_keys(
+        plans=plans,
+        plan_summaries=plan_summaries,
+    )
+    dead_segment_keys = unique_segment_keys - set(successful_segment_rates_by_key)
+    dead_segment_ratio = (
+        len(dead_segment_keys) / len(unique_segment_keys)
+        if unique_segment_keys
+        else 0.0
     )
     summary = AgentDifficultySummary(
         solvable=any(plan.semantic_success for plan in plans),
         semantic_plan_count=len(plans),
         simulated_plan_count=sum(1 for plan in plans if plan.semantic_success),
-        average_plan_success_rate=average_success_rate,
+        average_plan_success_rate=main_route_success_rate,
         best_plan_success_rate=best_success_rate,
-        difficulty_score=1.0 - average_success_rate,
+        difficulty_score=main_route_difficulty,
+        main_route_success_rate=main_route_success_rate,
+        main_route_difficulty=main_route_difficulty,
+        segment_success_std=segment_success_std,
+        dead_segment_count=len(dead_segment_keys),
+        unique_segment_count=len(unique_segment_keys),
+        dead_segment_ratio=dead_segment_ratio,
         plan_summaries=plan_summaries,
     )
     _DIFFICULTY_CACHE[cache_key] = summary
@@ -641,6 +680,40 @@ def _get_collected_stamina_value(problem: StaminaOnlyHC3Problem, collected_items
     )
 
 
+def _get_unique_segment_keys(
+    *,
+    plans: tuple[SemanticSolutionPlan, ...],
+    plan_summaries: tuple[PlanSimulationSummary, ...],
+) -> set[tuple[int, int]]:
+    attempted_segment_keys = {
+        (segment.source_node_id, segment.target_node_id)
+        for plan_summary in plan_summaries
+        for segment in plan_summary.segment_summaries
+    }
+    exact_dead_segment_keys = {
+        (plan.steps[-2].node_id, plan.steps[-1].node_id)
+        for plan in plans
+        if not plan.semantic_success and len(plan.steps) >= 2
+    }
+    return attempted_segment_keys | exact_dead_segment_keys
+
+
+def _get_successful_segment_rates_by_key(
+    plan_summaries: tuple[PlanSimulationSummary, ...],
+) -> dict[tuple[int, int], list[float]]:
+    segment_rates_by_key: dict[tuple[int, int], list[float]] = {}
+
+    for plan_summary in plan_summaries:
+        for segment in plan_summary.segment_summaries:
+            if segment.success_rate <= 0.0:
+                continue
+
+            segment_key = (segment.source_node_id, segment.target_node_id)
+            segment_rates_by_key.setdefault(segment_key, []).append(segment.success_rate)
+
+    return segment_rates_by_key
+
+
 def _has_key(problem: StaminaOnlyHC3Problem, collected_items_mask: int) -> bool:
     return any(
         item.kind == "key" and collected_items_mask & (1 << item_index)
@@ -653,6 +726,17 @@ def _average(values: Iterable[float | int]) -> float:
     if not values:
         return 0.0
     return sum(values) / len(values)
+
+
+def _standard_deviation(values: Iterable[float | int]) -> float:
+    values = tuple(values)
+
+    if len(values) < 2:
+        return 0.0
+
+    mean = _average(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return math.sqrt(variance)
 
 
 def _difficulty_cache_key(

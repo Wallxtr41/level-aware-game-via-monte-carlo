@@ -70,7 +70,7 @@ class AgentDifficultyTests(unittest.TestCase):
         self.assertTrue(best_plan.final_stamina_samples)
         self.assertTrue(all(stamina >= 0 for stamina in best_plan.final_stamina_samples))
 
-    def test_unsolved_semantic_plan_is_counted_as_zero_success(self) -> None:
+    def test_unsolved_semantic_plan_contributes_dead_segment_not_main_route(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
                 "#######",
@@ -100,7 +100,10 @@ class AgentDifficultyTests(unittest.TestCase):
             config=AgentDifficultyConfig(agents_per_segment=10, random_seed=5),
         )
 
-        self.assertGreater(summary.best_plan_success_rate, summary.average_plan_success_rate)
+        self.assertEqual(summary.average_plan_success_rate, summary.main_route_success_rate)
+        self.assertEqual(summary.best_plan_success_rate, summary.main_route_success_rate)
+        self.assertGreater(summary.dead_segment_ratio, 0.0)
+        self.assertGreater(summary.dead_segment_count, 0)
 
     def test_locked_inactive_door_is_transit_inside_agent_segment(self) -> None:
         problem = StaminaOnlyHC3Problem(
@@ -127,6 +130,29 @@ class AgentDifficultyTests(unittest.TestCase):
         )
 
         self.assertEqual(key_plan.segment_summaries[0].success_rate, 1.0)
+
+    def test_dead_segment_ratio_does_not_count_unattempted_suffix_segments(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#########",
+                "#.......#",
+                "#########",
+            ),
+            start=(1, 1),
+            door=(1, 7),
+            items=(ItemPlacement(kind="key", position=(1, 3), value=0),),
+            initial_stamina=10,
+            locked_door=True,
+        )
+
+        summary = estimate_agent_difficulty(
+            problem,
+            config=AgentDifficultyConfig(agents_per_segment=0, random_seed=8),
+        )
+
+        self.assertEqual(summary.dead_segment_count, 1)
+        self.assertEqual(summary.unique_segment_count, 1)
+        self.assertEqual(summary.dead_segment_ratio, 1.0)
 
     def test_agent_difficulty_is_deterministic_for_same_problem_and_config(self) -> None:
         problem = StaminaOnlyHC3Problem(

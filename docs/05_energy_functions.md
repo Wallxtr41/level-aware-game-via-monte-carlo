@@ -109,22 +109,31 @@ Kodda sadece toplam energy degil, terimlere ayrilmis hali de uretilir.
 Detayli ajan davranisi ve sample propagation aciklamasi icin:
 - [08_agent_difficulty_model.md](08_agent_difficulty_model.md)
 
-Yeni agent difficulty energy sadece ajan tabanli zorluk terimini kullanir. Bu modelde `target_path` ve `target_final_stamina` energy hesabina girmez.
+Yeni agent difficulty energy ajan tabanli zorluk terimlerini kullanir. Bu modelde `target_path` ve `target_final_stamina` energy hesabina girmez.
 
 Formul:
 
 ```text
-E = w_difficulty * |D_agent - D_target|
+E =
+  w_difficulty * |D_main_route - D_target|
+  + w_balance * segment_success_std
+  + w_dead * dead_segment_ratio
 ```
 
 Burada:
-- `D_agent`: segment ajan simulasyonlarindan tahmin edilen zorluk
+- `D_main_route`: sadece exact cozulebilen route'larin agent zorlugu
 - `D_target`: hedef zorluk
 - `w_difficulty`: difficulty teriminin agirligi
+- `segment_success_std`: unique basarili segment success rate'lerinin standart sapmasi
+- `dead_segment_ratio`: unique dead segment orani
+- `w_balance`: segment dengesizligi ceza agirligi
+- `w_dead`: dead segment ceza agirligi
 
 `baseline_pipeline.py` icindeki ilgili parametreler:
 - `TARGET_AGENT_DIFFICULTY`
 - `AGENT_DIFFICULTY_WEIGHT`
+- `SEGMENT_BALANCE_WEIGHT`
+- `DEAD_SEGMENT_WEIGHT`
 - `AGENTS_PER_SEGMENT`
 - `AGENT_DIFFICULTY_SEED`
 
@@ -137,7 +146,7 @@ Ornek planlar:
 - `start -> item:key -> door`
 - `start -> item:stamina -> item:key -> door`
 
-Exact olarak cozulemeyen planlar da listede kalir. Bu planlar icin ajan calistirilmaz ve plan success rate `0` kabul edilir.
+Exact olarak cozulemeyen planlar da listede kalir. Bu planlar main route difficulty ortalamasina katilmaz; bunun yerine dead segment hesabina katki verir.
 
 Exact olarak cozulebilen planlarda her plan segmenti icin ajanlar calistirilir.
 
@@ -165,13 +174,26 @@ Bir segment basarili oldugunda, hedef node stamina item ise kalan stamina'ya ite
 
 Plan basari orani, segment basari oranlarinin carpimidir.
 
-Map seviyesinde:
+Main route seviyesinde:
 
 ```text
-D_agent = 1 - average_plan_success_rate
+D_main_route = 1 - average_success_rate_of_exact_solvable_routes
 ```
 
-Yani door'a giden tum semantic planlarin ortalama gecilme orani dusukse harita daha zor kabul edilir.
+Yani exact cozulebilen route'larin ortalama gecilme orani dusukse ana route zorlugu yuksek kabul edilir.
+
+Ek olarak unique segmentler uzerinden iki kalite cezasi hesaplanir:
+
+```text
+segment_success_std = std(unique successful segment success rates)
+dead_segment_ratio = dead_unique_segments / all_unique_segments
+```
+
+Bu ayrim sunu engeller:
+- tek segment cok kolay, diger segment cok zor olunca toplam route success hedefe denk gelse bile `segment_success_std` ceza verir
+- cok fazla exact dead semantic baglanti varsa, ana route kolay olsa bile `dead_segment_ratio` ceza verir
+
+`all_unique_segments`, route suffix'lerini sisme olacak sekilde saymaz. Sadece ajan tarafindan gercekten simule edilen segmentler ve exact dead planlarda ilk basarisiz semantic segment dahil edilir.
 
 ## Deterministic Randomness
 
@@ -185,4 +207,3 @@ Bu yuzden ajan simulasyonlarinda kullanilan random seed:
 uzerinden deterministik uretilir.
 
 Bu sayede ayni harita tekrar degerlendirildiginde ayni agent difficulty sonucu alinir.
-

@@ -43,6 +43,8 @@ TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
 TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 20.0
+SEGMENT_BALANCE_WEIGHT = 15.0
+DEAD_SEGMENT_WEIGHT = 5.0
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
@@ -72,6 +74,8 @@ STAMINA_ONLY_ENERGY_FUNCTION = make_stamina_aware_baseline_energy(
 STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
     target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
     difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+    segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
+    dead_segment_weight=DEAD_SEGMENT_WEIGHT,
     agent_config=AGENT_DIFFICULTY_CONFIG,
 )
 
@@ -98,9 +102,9 @@ MODE_CONFIGS = {
     "stamina_only": ModeConfig(
         name="stamina_only",
         uses_stamina_solver=True,
-        initial_stamina=  20,#TARGET_PATH_LENGTH + TARGET_FINAL_STAMINA - 2* 6,  # Start with enough stamina to reach the door, then optimize from there.
+        initial_stamina=  50,#TARGET_PATH_LENGTH + TARGET_FINAL_STAMINA - 2* 6,  # Start with enough stamina to reach the door, then optimize from there.
         locked_door=True,
-        item_kinds=("key",), #"stamina", "stamina", 
+        item_kinds=("stamina", "stamina","key",), #"stamina", "stamina", 
         proposal_move_types=("topology", "item_move", "door_move"),
     ),
 }
@@ -164,13 +168,19 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 state=state,
                 target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
                 difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+                segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
+                dead_segment_weight=DEAD_SEGMENT_WEIGHT,
                 agent_config=AGENT_DIFFICULTY_CONFIG,
             )
             return (
                 f"target_agent_difficulty={breakdown.agent_difficulty_target} "
-                f"agent_difficulty={breakdown.agent_difficulty_actual} "
-                f"average_agent_success_rate={breakdown.agent_success_rate} "
-                f"agent_difficulty_term={breakdown.agent_difficulty_term} "
+                f"main_route_difficulty={breakdown.agent_difficulty_actual} "
+                f"main_route_success_rate={breakdown.agent_success_rate} "
+                f"main_route_term={breakdown.agent_difficulty_term} "
+                f"segment_success_std={breakdown.segment_balance_penalty} "
+                f"segment_balance_term={breakdown.segment_balance_term} "
+                f"dead_segment_ratio={breakdown.dead_segment_ratio} "
+                f"dead_segment_term={breakdown.dead_segment_term} "
                 f"total={breakdown.total_energy}"
             )
 
@@ -200,6 +210,8 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         state=state,
         target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
         difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+        segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
+        dead_segment_weight=DEAD_SEGMENT_WEIGHT,
         agent_config=AGENT_DIFFICULTY_CONFIG,
     )
     summary = breakdown.agent_difficulty_summary
@@ -212,9 +224,12 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         (
             f"semantic_plans={summary.semantic_plan_count} "
             f"simulated_plans={summary.simulated_plan_count} "
-            f"average_success_rate={summary.average_plan_success_rate:.3f} "
+            f"main_route_success_rate={summary.main_route_success_rate:.3f} "
             f"best_success_rate={summary.best_plan_success_rate:.3f} "
-            f"difficulty={summary.difficulty_score:.3f}"
+            f"main_route_difficulty={summary.main_route_difficulty:.3f} "
+            f"segment_success_std={summary.segment_success_std:.3f} "
+            f"dead_segment_ratio={summary.dead_segment_ratio:.3f} "
+            f"dead_segments={summary.dead_segment_count}/{summary.unique_segment_count}"
         ),
     ]
 
@@ -225,22 +240,63 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         summary.plan_summaries,
         key=lambda plan_summary: plan_summary.estimated_success_rate,
     )
-    plan_kinds = " -> ".join(step.kind for step in best_plan.plan.steps)
+    plan_kinds = _format_plan_route(best_plan.plan.steps)
     parts.append(
         f"best_plan={plan_kinds} estimated_success_rate={best_plan.estimated_success_rate:.3f}"
     )
+    parts.append("plans:")
 
-    for segment_index, segment in enumerate(best_plan.segment_summaries):
+    for plan_index, plan_summary in enumerate(summary.plan_summaries):
+        plan = plan_summary.plan
+        route = _format_plan_route(plan.steps)
+        status = "exact_solvable" if plan.semantic_success else "exact_dead"
         parts.append(
-            f"segment={segment_index} {segment.source_position}->{segment.target_position} "
-            f"success_rate={segment.success_rate:.3f} "
-            f"avg_steps={segment.average_steps:.2f} "
-            f"avg_revisits={segment.average_revisits:.2f} "
-            f"avg_backtracks={segment.average_forced_backtracks:.2f} "
-            f"avg_success_stamina={segment.average_success_remaining_stamina:.2f}"
+            f"plan={plan_index} status={status} "
+            f"estimated_success_rate={plan_summary.estimated_success_rate:.3f} "
+            f"route={route}"
         )
 
+        if plan.shortest_cost is not None or plan.final_stamina is not None:
+            parts.append(
+                f"plan={plan_index} exact_shortest_cost={plan.shortest_cost} "
+                f"exact_final_stamina={plan.final_stamina}"
+            )
+
+        if not plan_summary.segment_summaries:
+            parts.append(f"plan={plan_index} no_agent_segments")
+            continue
+
+        for segment_index, segment in enumerate(plan_summary.segment_summaries):
+            prefix = _format_plan_route(plan.steps[: segment_index + 1])
+            segment_route = _format_segment_route(
+                plan.steps[segment_index],
+                plan.steps[segment_index + 1],
+            )
+            parts.append(
+                f"plan={plan_index} segment={segment_index} "
+                f"prefix={prefix} "
+                f"move={segment_route} "
+                f"success_rate={segment.success_rate:.3f} "
+                f"success={segment.success_count}/{segment.agent_count} "
+                f"avg_steps={segment.average_steps:.2f} "
+                f"avg_revisits={segment.average_revisits:.2f} "
+                f"avg_backtracks={segment.average_forced_backtracks:.2f} "
+                f"avg_success_stamina={segment.average_success_remaining_stamina:.2f}"
+            )
+
     return "\n".join(parts)
+
+
+def _format_plan_route(steps) -> str:
+    return " -> ".join(_format_step_label(step) for step in steps)
+
+
+def _format_segment_route(source_step, target_step) -> str:
+    return f"{_format_step_label(source_step)} -> {_format_step_label(target_step)}"
+
+
+def _format_step_label(step) -> str:
+    return f"{step.kind}@{step.position}"
 
 
 def get_solution_summary(state: BaselineState, label: str = "state") -> str:
