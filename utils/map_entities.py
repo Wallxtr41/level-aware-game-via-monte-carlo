@@ -11,7 +11,7 @@ Grid = list[list[int]]
 Position = tuple[int, int]
 ItemKind = Literal["stamina", "power", "key"]
 DEFAULT_ITEM_VALUES: dict[ItemKind, int] = {
-    "stamina": 6,
+    "stamina": 15,
     "power": 3,
     "key": 0,
 }

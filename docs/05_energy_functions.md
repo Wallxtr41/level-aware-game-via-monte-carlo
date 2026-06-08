@@ -118,6 +118,7 @@ E =
   w_difficulty * |D_main_route - D_target|
   + w_balance * segment_balance_score
   + w_dead * dead_segment_ratio
+  + w_final_stamina * final_stamina_score
 ```
 
 Burada:
@@ -129,12 +130,16 @@ Burada:
 - `dead_segment_ratio`: unique dead segment orani
 - `w_balance`: segment dengesizligi ceza agirligi
 - `w_dead`: dead segment ceza agirligi
+- `final_stamina_score`: success-rate agirlikli final stamina hedefinden normalize sapma
+- `w_final_stamina`: final stamina ceza agirligi
 
 `baseline_pipeline.py` icindeki ilgili parametreler:
 - `TARGET_AGENT_DIFFICULTY`
 - `AGENT_DIFFICULTY_WEIGHT`
 - `SEGMENT_BALANCE_WEIGHT`
 - `DEAD_SEGMENT_WEIGHT`
+- `FINAL_STAMINA_WEIGHT`
+- `FINAL_STAMINA_TARGET_FACTOR`
 - `AGENTS_PER_SEGMENT`
 - `AGENT_DIFFICULTY_SEED`
 
@@ -197,6 +202,20 @@ Bu ayrim sunu engeller:
 - cok fazla exact dead semantic baglanti varsa, ana route kolay olsa bile `dead_segment_ratio` ceza verir
 
 `segment_success_std` hesabina agent success rate `0` olan exact-gecilebilir segmentler de dahildir. `all_unique_segments`, route suffix'lerini sisme olacak sekilde saymaz. Sadece ajan tarafindan gercekten simule edilen segmentler ve exact dead planlarda ilk basarisiz semantic segment dahil edilir.
+
+Final stamina terimi exact solvable planlarin basarili agent sonuclarindan hesaplanir:
+
+```text
+target_final_stamina = FINAL_STAMINA_TARGET_FACTOR * initial_stamina * TARGET_AGENT_DIFFICULTY
+weighted_final_stamina =
+  sum(plan_success_rate * avg_final_stamina_for_plan)
+  / sum(plan_success_rate)
+final_stamina_score =
+  abs(target_final_stamina - weighted_final_stamina)
+  / max_possible_stamina
+```
+
+Burada `max_possible_stamina`, initial stamina ve tum stamina item bonuslarinin toplamidir. Bu normalizasyon final stamina terimini 0-1 araligina getirir.
 
 ## Deterministic Randomness
 

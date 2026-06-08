@@ -497,6 +497,7 @@ E =
   difficulty_weight * abs(main_route_difficulty - target_agent_difficulty)
   + segment_balance_weight * segment_balance_score
   + dead_segment_weight * dead_segment_ratio
+  + final_stamina_weight * final_stamina_score
 ```
 
 Burada:
@@ -504,6 +505,9 @@ Burada:
 ```text
 main_route_difficulty = 1 - main_route_success_rate
 segment_balance_score = min(1, 2 * segment_success_std)
+target_final_stamina = final_stamina_target_factor * initial_stamina * target_agent_difficulty
+weighted_final_stamina = sum(plan_success_rate * avg_final_stamina_for_plan) / sum(plan_success_rate)
+final_stamina_score = abs(target_final_stamina - weighted_final_stamina) / max_possible_stamina
 ```
 
 Pipeline parametreleri:
@@ -514,6 +518,8 @@ TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 20.0
 SEGMENT_BALANCE_WEIGHT = 10.0
 DEAD_SEGMENT_WEIGHT = 10.0
+FINAL_STAMINA_WEIGHT = 10.0
+FINAL_STAMINA_TARGET_FACTOR = 0.8
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 ```
@@ -542,6 +548,10 @@ segment_balance_score
 segment_balance_term
 dead_segment_ratio
 dead_segment_term
+target_weighted_final_stamina
+weighted_final_stamina
+final_stamina_score
+final_stamina_term
 ```
 
 Ayrica `Agent difficulty summary` blogu basilir.

@@ -45,6 +45,8 @@ TARGET_AGENT_DIFFICULTY = 0.9
 AGENT_DIFFICULTY_WEIGHT = 20.0
 SEGMENT_BALANCE_WEIGHT = 15.0
 DEAD_SEGMENT_WEIGHT = 0
+FINAL_STAMINA_WEIGHT = 10.0
+FINAL_STAMINA_TARGET_FACTOR = 0.8
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
@@ -76,6 +78,8 @@ STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
     difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
     segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
     dead_segment_weight=DEAD_SEGMENT_WEIGHT,
+    final_stamina_weight=FINAL_STAMINA_WEIGHT,
+    final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
     agent_config=AGENT_DIFFICULTY_CONFIG,
 )
 
@@ -170,6 +174,8 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
                 segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
                 dead_segment_weight=DEAD_SEGMENT_WEIGHT,
+                final_stamina_weight=FINAL_STAMINA_WEIGHT,
+                final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
                 agent_config=AGENT_DIFFICULTY_CONFIG,
             )
             return (
@@ -182,6 +188,10 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 f"segment_balance_term={breakdown.segment_balance_term} "
                 f"dead_segment_ratio={breakdown.dead_segment_ratio} "
                 f"dead_segment_term={breakdown.dead_segment_term} "
+                f"target_weighted_final_stamina={breakdown.remaining_stamina_target} "
+                f"weighted_final_stamina={breakdown.remaining_stamina_actual} "
+                f"final_stamina_score={breakdown.remaining_stamina_score} "
+                f"final_stamina_term={breakdown.remaining_stamina_term} "
                 f"total={breakdown.total_energy}"
             )
 
@@ -213,6 +223,8 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
         segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
         dead_segment_weight=DEAD_SEGMENT_WEIGHT,
+        final_stamina_weight=FINAL_STAMINA_WEIGHT,
+        final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
         agent_config=AGENT_DIFFICULTY_CONFIG,
     )
     summary = breakdown.agent_difficulty_summary
@@ -231,6 +243,12 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
             f"segment_success_std={summary.segment_success_std:.3f} "
             f"dead_segment_ratio={summary.dead_segment_ratio:.3f} "
             f"dead_segments={summary.dead_segment_count}/{summary.unique_segment_count}"
+        ),
+        (
+            f"target_weighted_final_stamina={breakdown.remaining_stamina_target:.3f} "
+            f"weighted_final_stamina={breakdown.remaining_stamina_actual:.3f} "
+            f"final_stamina_score={breakdown.remaining_stamina_score:.3f} "
+            f"final_stamina_term={breakdown.remaining_stamina_term:.3f}"
         ),
     ]
 
