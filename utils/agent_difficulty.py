@@ -230,6 +230,16 @@ def enumerate_semantic_solution_plans(
     start_node = graph.nodes[start_state.node_id]
     start_step = _make_plan_step(start_node, edge_cost=0, remaining_stamina=start_state.remaining_stamina)
     plans: list[SemanticSolutionPlan] = []
+    seen_plan_keys: set[tuple[tuple[int, ...], bool]] = set()
+
+    def add_plan(plan: SemanticSolutionPlan) -> None:
+        plan_key = (plan.node_ids, plan.semantic_success)
+
+        if plan_key in seen_plan_keys:
+            return
+
+        seen_plan_keys.add(plan_key)
+        plans.append(plan)
 
     def dfs(
         current_node_id: int,
@@ -254,7 +264,7 @@ def enumerate_semantic_solution_plans(
             next_steps = (*steps, next_step)
 
             if target_node.kind == "door":
-                plans.append(_score_semantic_plan(problem, graph, next_steps))
+                add_plan(_score_semantic_plan(problem, graph, next_steps))
                 continue
 
             next_has_key = has_key or _node_is_key(problem, target_node)

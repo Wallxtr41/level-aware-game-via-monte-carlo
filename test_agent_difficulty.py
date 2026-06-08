@@ -196,6 +196,30 @@ class AgentDifficultyTests(unittest.TestCase):
         self.assertEqual(summary.unique_segment_count, 1)
         self.assertEqual(summary.dead_segment_ratio, 0.0)
 
+    def test_semantic_plan_enumeration_deduplicates_same_scored_prefix(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#.....#",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(3, 5),
+            items=(
+                ItemPlacement(kind="stamina", position=(3, 1), value=0),
+                ItemPlacement(kind="stamina", position=(1, 5), value=0),
+            ),
+            initial_stamina=1,
+            locked_door=False,
+        )
+
+        plans = enumerate_semantic_solution_plans(problem)
+        plan_keys = [(plan.node_ids, plan.semantic_success) for plan in plans]
+
+        self.assertEqual(len(plan_keys), len(set(plan_keys)))
+
     def test_agent_difficulty_is_deterministic_for_same_problem_and_config(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(

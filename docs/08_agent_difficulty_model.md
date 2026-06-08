@@ -73,6 +73,8 @@ Plan icinde ayni non-door semantic node tekrar ziyaret edilmez. Bu, semantic sev
 
 Kilitli kapi, key alinmadan semantic target olarak enumerate edilmez. Bu durumda kapi sadece yol gibi transit hucredir. Key alindiktan sonra veya kapi basta aciksa door semantic target olarak planlara girebilir.
 
+Exact dead planlar skorlanirken ilk basarisiz semantic segmente kadar kisalabilir. Farkli full suffix'ler ayni basarisiz prefix'e dusuyorsa bu planlar tekillestirilir; terminalde ayni dead route birden fazla basilmamalidir.
+
 Plan sayisi icin artik yapay bir `max_semantic_plans` limiti yoktur. Ayni non-door semantic node tekrar ziyaret edilmedigi icin plan sayisi sonludur.
 
 ## Semantic Plan Verisi
