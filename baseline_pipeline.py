@@ -41,7 +41,7 @@ GRID_HEIGHT = 15
 START_POS = (1, 1)
 TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
-TARGET_AGENT_DIFFICULTY = 0.1
+TARGET_AGENT_DIFFICULTY = 0.9
 AGENT_DIFFICULTY_WEIGHT = 20.0
 SEGMENT_BALANCE_WEIGHT = 15.0
 DEAD_SEGMENT_WEIGHT = 0
@@ -241,6 +241,10 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         "segment_success_rates_for_std="
         f"[{_format_segment_success_rates_for_std(summary.plan_summaries)}]"
     )
+    parts.append(
+        "dead_segment_analysis="
+        f"[{_format_dead_segment_analysis(summary.plan_summaries)}]"
+    )
 
     best_plan = max(
         summary.plan_summaries,
@@ -338,6 +342,51 @@ def _format_segment_success_rates_for_std(plan_summaries) -> str:
         )
         formatted_segments.append(
             f"{segment_labels_by_key[segment_key]}:{average_success_rate:.3f}{occurrence_suffix}"
+        )
+
+    return "; ".join(formatted_segments)
+
+
+def _format_dead_segment_analysis(plan_summaries) -> str:
+    segment_status_by_key = {}
+    segment_labels_by_key = {}
+
+    for plan_summary in plan_summaries:
+        plan = plan_summary.plan
+        node_labels = {
+            step.node_id: _format_step_label(step)
+            for step in plan.steps
+        }
+
+        for segment in plan_summary.segment_summaries:
+            segment_key = (segment.source_node_id, segment.target_node_id)
+            segment_status_by_key[segment_key] = "alive"
+            segment_labels_by_key.setdefault(
+                segment_key,
+                (
+                    f"{node_labels.get(segment.source_node_id, segment.source_position)}"
+                    f" -> {node_labels.get(segment.target_node_id, segment.target_position)}"
+                ),
+            )
+
+        if not plan.semantic_success and len(plan.steps) >= 2:
+            source_step = plan.steps[-2]
+            target_step = plan.steps[-1]
+            segment_key = (source_step.node_id, target_step.node_id)
+
+            if segment_status_by_key.get(segment_key) != "alive":
+                segment_status_by_key[segment_key] = "dead"
+
+            segment_labels_by_key.setdefault(
+                segment_key,
+                _format_segment_route(source_step, target_step),
+            )
+
+    formatted_segments = []
+
+    for segment_key in sorted(segment_status_by_key):
+        formatted_segments.append(
+            f"{segment_status_by_key[segment_key]}:{segment_labels_by_key[segment_key]}"
         )
 
     return "; ".join(formatted_segments)
