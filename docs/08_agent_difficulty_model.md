@@ -350,7 +350,7 @@ Eger plan exact olarak cozulemezse:
 estimated_success_rate = 0
 ```
 
-Bu durumda o plan icin ajan calistirilmez, ama plan map-level ortalamaya `0` olarak katilir.
+Bu durumda o plan icin ajan calistirilmez. Plan main route ortalamasina katilmaz; ilk exact basarisiz segment dead segment hesabina katilir.
 
 ## Map Difficulty Skoru
 
@@ -392,10 +392,10 @@ route success = 0.5
 
 Bu route hedef difficulty'ye denk gelebilir ama zorluk tek segmente yigilmistir.
 
-Bu nedenle unique basarili segmentlerin success rate standart sapmasi hesaplanir:
+Bu nedenle unique simule edilmis segmentlerin success rate standart sapmasi hesaplanir. Agent success rate `0` olan ama exact olarak gecilebilir segmentler de bu hesaba dahildir.
 
 ```text
-segment_success_std = std(unique successful segment success rates)
+segment_success_std = std(unique attempted segment success rates)
 ```
 
 Segment ayni source-target ciftinde birden fazla route icinde gecerse tek unique segment olarak ele alinir. Birden fazla olcum varsa o segmentin ortalama success rate'i kullanilir.
@@ -428,7 +428,7 @@ Buradaki `all_unique_segments` tum suffix route parcalarini kapsamaz. Sadece:
 
 dahil edilir.
 
-Bir segment herhangi bir simule edilen route icinde `success_rate > 0` uretiyorsa dead sayilmaz. Hic basarili ornegi yoksa dead segment olarak sayilir.
+Bir segment exact cozulebilen bir route icinde simule edildiyse, agent success rate `0` olsa bile dead segment sayilmaz. Bu durumda segment balance listesine `0.0` olarak girer. Dead segment sadece exact semantic analizde ilk basarisiz segment olarak gelen segmenttir.
 
 ## Deterministic Randomness
 
@@ -553,7 +553,7 @@ Burada:
 - `simulated_plans`: exact olarak cozulebildigi icin ajan calistirilan plan sayisi
 - `main_route_success_rate`: exact cozulebilen planlarin ortalama success rate'i
 - `best_success_rate`: en yuksek success rate'e sahip planin orani
-- `segment_success_std`: unique basarili segment success rate'lerinin standart sapmasi
+- `segment_success_std`: unique simule edilmis segment success rate'lerinin standart sapmasi
 - `dead_segment_ratio`: unique dead segment orani
 
 ## Mevcut Sinirlilik
@@ -563,7 +563,7 @@ Bu model ilk surumdur.
 Su an:
 - exact cozulebilen door-ending semantic planlar main route difficulty icin kullanilir
 - exact cozulemeyen semantic planlar dead segment ratio ile temsil edilir
-- unique basarili segmentler segment balance icin kullanilir
+- unique simule edilmis segmentler segment balance icin kullanilir; agent success rate `0` olan exact-gecilebilir segmentler dahil edilir
 - revisit ve forced backtrack metrikleri energy'ye dogrudan eklenmez
 - ajanlar sadece local segment davranisi simule eder
 

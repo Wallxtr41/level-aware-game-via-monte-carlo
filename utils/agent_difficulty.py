@@ -179,17 +179,15 @@ def estimate_agent_difficulty(
     )
     main_route_success_rate = _average(solvable_success_rates)
     main_route_difficulty = 1.0 - main_route_success_rate
-    successful_segment_rates_by_key = _get_successful_segment_rates_by_key(plan_summaries)
-    unique_successful_segment_rates = tuple(
+    attempted_segment_rates_by_key = _get_attempted_segment_rates_by_key(plan_summaries)
+    unique_attempted_segment_rates = tuple(
         _average(segment_rates)
-        for segment_rates in successful_segment_rates_by_key.values()
+        for segment_rates in attempted_segment_rates_by_key.values()
     )
-    segment_success_std = _standard_deviation(unique_successful_segment_rates)
-    unique_segment_keys = _get_unique_segment_keys(
-        plans=plans,
-        plan_summaries=plan_summaries,
-    )
-    dead_segment_keys = unique_segment_keys - set(successful_segment_rates_by_key)
+    segment_success_std = _standard_deviation(unique_attempted_segment_rates)
+    exact_dead_segment_keys = _get_exact_dead_segment_keys(plans)
+    unique_segment_keys = set(attempted_segment_rates_by_key) | exact_dead_segment_keys
+    dead_segment_keys = exact_dead_segment_keys
     dead_segment_ratio = (
         len(dead_segment_keys) / len(unique_segment_keys)
         if unique_segment_keys
@@ -680,34 +678,21 @@ def _get_collected_stamina_value(problem: StaminaOnlyHC3Problem, collected_items
     )
 
 
-def _get_unique_segment_keys(
-    *,
-    plans: tuple[SemanticSolutionPlan, ...],
-    plan_summaries: tuple[PlanSimulationSummary, ...],
-) -> set[tuple[int, int]]:
-    attempted_segment_keys = {
-        (segment.source_node_id, segment.target_node_id)
-        for plan_summary in plan_summaries
-        for segment in plan_summary.segment_summaries
-    }
-    exact_dead_segment_keys = {
+def _get_exact_dead_segment_keys(plans: tuple[SemanticSolutionPlan, ...]) -> set[tuple[int, int]]:
+    return {
         (plan.steps[-2].node_id, plan.steps[-1].node_id)
         for plan in plans
         if not plan.semantic_success and len(plan.steps) >= 2
     }
-    return attempted_segment_keys | exact_dead_segment_keys
 
 
-def _get_successful_segment_rates_by_key(
+def _get_attempted_segment_rates_by_key(
     plan_summaries: tuple[PlanSimulationSummary, ...],
 ) -> dict[tuple[int, int], list[float]]:
     segment_rates_by_key: dict[tuple[int, int], list[float]] = {}
 
     for plan_summary in plan_summaries:
         for segment in plan_summary.segment_summaries:
-            if segment.success_rate <= 0.0:
-                continue
-
             segment_key = (segment.source_node_id, segment.target_node_id)
             segment_rates_by_key.setdefault(segment_key, []).append(segment.success_rate)
 

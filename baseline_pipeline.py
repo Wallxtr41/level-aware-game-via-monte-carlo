@@ -44,7 +44,7 @@ TARGET_FINAL_STAMINA = 10
 TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 20.0
 SEGMENT_BALANCE_WEIGHT = 15.0
-DEAD_SEGMENT_WEIGHT = 5.0
+DEAD_SEGMENT_WEIGHT = 0
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
@@ -236,6 +236,11 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
     if not summary.plan_summaries:
         return "\n".join(parts)
 
+    parts.append(
+        "segment_success_rates_for_std="
+        f"[{_format_segment_success_rates_for_std(summary.plan_summaries)}]"
+    )
+
     best_plan = max(
         summary.plan_summaries,
         key=lambda plan_summary: plan_summary.estimated_success_rate,
@@ -297,6 +302,44 @@ def _format_segment_route(source_step, target_step) -> str:
 
 def _format_step_label(step) -> str:
     return f"{step.kind}@{step.position}"
+
+
+def _format_segment_success_rates_for_std(plan_summaries) -> str:
+    segment_rates_by_key = {}
+    segment_labels_by_key = {}
+
+    for plan_summary in plan_summaries:
+        node_labels = {
+            step.node_id: _format_step_label(step)
+            for step in plan_summary.plan.steps
+        }
+
+        for segment in plan_summary.segment_summaries:
+            segment_key = (segment.source_node_id, segment.target_node_id)
+            segment_rates_by_key.setdefault(segment_key, []).append(segment.success_rate)
+            segment_labels_by_key.setdefault(
+                segment_key,
+                (
+                    f"{node_labels.get(segment.source_node_id, segment.source_position)}"
+                    f" -> {node_labels.get(segment.target_node_id, segment.target_position)}"
+                ),
+            )
+
+    formatted_segments = []
+
+    for segment_key in sorted(segment_rates_by_key):
+        segment_rates = segment_rates_by_key[segment_key]
+        average_success_rate = sum(segment_rates) / len(segment_rates)
+        occurrence_suffix = (
+            f" occurrences={len(segment_rates)}"
+            if len(segment_rates) > 1
+            else ""
+        )
+        formatted_segments.append(
+            f"{segment_labels_by_key[segment_key]}:{average_success_rate:.3f}{occurrence_suffix}"
+        )
+
+    return "; ".join(formatted_segments)
 
 
 def get_solution_summary(state: BaselineState, label: str = "state") -> str:

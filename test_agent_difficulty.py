@@ -134,13 +134,13 @@ class AgentDifficultyTests(unittest.TestCase):
     def test_dead_segment_ratio_does_not_count_unattempted_suffix_segments(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
-                "#########",
-                "#.......#",
-                "#########",
+                "########",
+                "#......#",
+                "########",
             ),
             start=(1, 1),
-            door=(1, 7),
-            items=(ItemPlacement(kind="key", position=(1, 3), value=0),),
+            door=(1, 3),
+            items=(ItemPlacement(kind="key", position=(1, 6), value=0),),
             initial_stamina=10,
             locked_door=True,
         )
@@ -151,8 +151,30 @@ class AgentDifficultyTests(unittest.TestCase):
         )
 
         self.assertEqual(summary.dead_segment_count, 1)
+        self.assertEqual(summary.unique_segment_count, 2)
+        self.assertEqual(summary.dead_segment_ratio, 0.5)
+
+    def test_zero_agent_success_on_exact_segment_is_not_dead_segment(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(1, 5),
+            initial_stamina=10,
+            locked_door=False,
+        )
+
+        summary = estimate_agent_difficulty(
+            problem,
+            config=AgentDifficultyConfig(agents_per_segment=0, random_seed=9),
+        )
+
+        self.assertEqual(summary.dead_segment_count, 0)
         self.assertEqual(summary.unique_segment_count, 1)
-        self.assertEqual(summary.dead_segment_ratio, 1.0)
+        self.assertEqual(summary.dead_segment_ratio, 0.0)
 
     def test_agent_difficulty_is_deterministic_for_same_problem_and_config(self) -> None:
         problem = StaminaOnlyHC3Problem(

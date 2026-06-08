@@ -124,7 +124,7 @@ Burada:
 - `D_main_route`: sadece exact cozulebilen route'larin agent zorlugu
 - `D_target`: hedef zorluk
 - `w_difficulty`: difficulty teriminin agirligi
-- `segment_success_std`: unique basarili segment success rate'lerinin standart sapmasi
+- `segment_success_std`: unique simule edilmis segment success rate'lerinin standart sapmasi
 - `dead_segment_ratio`: unique dead segment orani
 - `w_balance`: segment dengesizligi ceza agirligi
 - `w_dead`: dead segment ceza agirligi
@@ -185,7 +185,7 @@ Yani exact cozulebilen route'larin ortalama gecilme orani dusukse ana route zorl
 Ek olarak unique segmentler uzerinden iki kalite cezasi hesaplanir:
 
 ```text
-segment_success_std = std(unique successful segment success rates)
+segment_success_std = std(unique attempted segment success rates)
 dead_segment_ratio = dead_unique_segments / all_unique_segments
 ```
 
@@ -193,7 +193,7 @@ Bu ayrim sunu engeller:
 - tek segment cok kolay, diger segment cok zor olunca toplam route success hedefe denk gelse bile `segment_success_std` ceza verir
 - cok fazla exact dead semantic baglanti varsa, ana route kolay olsa bile `dead_segment_ratio` ceza verir
 
-`all_unique_segments`, route suffix'lerini sisme olacak sekilde saymaz. Sadece ajan tarafindan gercekten simule edilen segmentler ve exact dead planlarda ilk basarisiz semantic segment dahil edilir.
+`segment_success_std` hesabina agent success rate `0` olan exact-gecilebilir segmentler de dahildir. `all_unique_segments`, route suffix'lerini sisme olacak sekilde saymaz. Sadece ajan tarafindan gercekten simule edilen segmentler ve exact dead planlarda ilk basarisiz semantic segment dahil edilir.
 
 ## Deterministic Randomness
 
