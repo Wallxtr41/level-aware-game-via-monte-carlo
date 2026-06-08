@@ -144,8 +144,18 @@ def get_item_surface(tiles, item_kind):
     return tiles[f"item_{item_kind}"]
 
 
-def find_semantic_blocked_path(state, source_position, target_position, door_is_active):
-    semantic_positions = {item.position for item in state.items}
+def find_semantic_blocked_path(
+    state,
+    source_position,
+    target_position,
+    door_is_active,
+    collected_item_positions,
+):
+    semantic_positions = {
+        item.position
+        for item in state.items
+        if item.position not in collected_item_positions
+    }
 
     if door_is_active:
         semantic_positions.add(state.door)
@@ -201,6 +211,7 @@ def get_solution_overlay_paths(state):
 
     segment_paths = []
     has_key = False
+    collected_item_positions = set()
 
     for step_index in range(len(breakdown.solution_steps) - 1):
         current_step = breakdown.solution_steps[step_index]
@@ -211,6 +222,7 @@ def get_solution_overlay_paths(state):
             current_step.position,
             next_step.position,
             door_is_active=door_is_active,
+            collected_item_positions=collected_item_positions,
         )
 
         if path:
@@ -218,6 +230,9 @@ def get_solution_overlay_paths(state):
 
         if next_step.kind == "item:key":
             has_key = True
+            collected_item_positions.add(next_step.position)
+        elif next_step.kind.startswith("item:"):
+            collected_item_positions.add(next_step.position)
 
     return segment_paths
 

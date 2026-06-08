@@ -168,8 +168,18 @@ def compute_visible_cells(grid, center, radius):
 
 # ── Cozum yolu hesaplama (replay icin) ───────────────────────────────────────────
 
-def find_semantic_blocked_path(state, source_pos, target_pos, door_is_active):
-    semantic_positions = {item.position for item in state.items}
+def find_semantic_blocked_path(
+    state,
+    source_pos,
+    target_pos,
+    door_is_active,
+    collected_item_positions,
+):
+    semantic_positions = {
+        item.position
+        for item in state.items
+        if item.position not in collected_item_positions
+    }
     if door_is_active:
         semantic_positions.add(state.door)
     semantic_positions.discard(source_pos)
@@ -214,6 +224,7 @@ def compute_replay_path(mc_state):
 
     segments = []
     has_key = False
+    collected_item_positions = set()
 
     for i in range(len(breakdown.solution_steps) - 1):
         curr = breakdown.solution_steps[i]
@@ -221,11 +232,15 @@ def compute_replay_path(mc_state):
         path = find_semantic_blocked_path(
             mc_state, curr.position, nxt.position,
             door_is_active=(has_key or not mc_state.locked_door),
+            collected_item_positions=collected_item_positions,
         )
         if path:
             segments.append(path)
         if nxt.kind == "item:key":
             has_key = True
+            collected_item_positions.add(nxt.position)
+        elif nxt.kind.startswith("item:"):
+            collected_item_positions.add(nxt.position)
 
     flat: list = []
     for seg in segments:

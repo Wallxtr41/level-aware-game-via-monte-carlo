@@ -116,7 +116,7 @@ Formul:
 ```text
 E =
   w_difficulty * |D_main_route - D_target|
-  + w_balance * segment_success_std
+  + w_balance * segment_balance_score
   + w_dead * dead_segment_ratio
 ```
 
@@ -125,6 +125,7 @@ Burada:
 - `D_target`: hedef zorluk
 - `w_difficulty`: difficulty teriminin agirligi
 - `segment_success_std`: unique simule edilmis segment success rate'lerinin standart sapmasi
+- `segment_balance_score`: `2 * segment_success_std` ile normalize edilmis balance skoru
 - `dead_segment_ratio`: unique dead segment orani
 - `w_balance`: segment dengesizligi ceza agirligi
 - `w_dead`: dead segment ceza agirligi
@@ -157,7 +158,8 @@ Ornek segmentler:
 
 Her segmentte ajanlar:
 - hedef node'a ulasmaya calisir
-- diger semantic node'lari duvar gibi gorur
+- henuz toplanmamis diger item node'larini duvar gibi gorur
+- daha once toplanmis item node'larini yol gibi gecilebilir kabul eder
 - mumkunse daha once basmadigi hucreleri secer
 - seceneklerin hepsi ziyaret edildiyse geriye donmek yerine baska ziyaret edilmis secenekleri dener
 - sadece cikmaz sokakta mecburen geri doner
@@ -186,6 +188,7 @@ Ek olarak unique segmentler uzerinden iki kalite cezasi hesaplanir:
 
 ```text
 segment_success_std = std(unique attempted segment success rates)
+segment_balance_score = min(1, 2 * segment_success_std)
 dead_segment_ratio = dead_unique_segments / all_unique_segments
 ```
 

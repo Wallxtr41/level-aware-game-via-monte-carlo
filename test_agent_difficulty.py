@@ -151,6 +151,28 @@ class AgentDifficultyTests(unittest.TestCase):
 
         self.assertEqual(key_plan.segment_summaries[0].success_rate, 1.0)
 
+    def test_collected_item_is_transit_for_later_semantic_segments(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "########",
+                "#......#",
+                "########",
+            ),
+            start=(1, 1),
+            door=(1, 2),
+            items=(
+                ItemPlacement(kind="key", position=(1, 4), value=0),
+                ItemPlacement(kind="stamina", position=(1, 6), value=0),
+            ),
+            initial_stamina=20,
+            locked_door=True,
+        )
+
+        plans = enumerate_semantic_solution_plans(problem)
+        plan_kinds = {tuple(step.kind for step in plan.steps) for plan in plans}
+
+        self.assertIn(("start", "item:key", "item:stamina", "door"), plan_kinds)
+
     def test_zero_agent_success_does_not_create_dead_segment(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(

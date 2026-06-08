@@ -13,6 +13,7 @@ from utils.hard_constraints.hc3_stamina_only_solver import (
     StaminaOnlyHC3Problem,
     StaminaOnlyState,
     build_stamina_only_hc3_graph,
+    compute_reachable_edges_for_state,
 )
 from utils.map_analysis import is_walkable, iter_neighbors
 from utils.map_entities import Position
@@ -242,15 +243,11 @@ def enumerate_semantic_solution_plans(
         plans.append(plan)
 
     def dfs(
-        current_node_id: int,
+        current_state: StaminaOnlyState,
         steps: tuple[SemanticPlanStep, ...],
         visited_node_ids: frozenset[int],
-        has_key: bool,
     ) -> None:
-        door_is_active = has_key or not problem.locked_door
-        adjacency = graph.open_door_adjacency if door_is_active else graph.closed_door_adjacency
-
-        for target_node_id, edge_cost in adjacency[current_node_id]:
+        for target_node_id, edge_cost in compute_reachable_edges_for_state(problem, graph, current_state):
             target_node = graph.nodes[target_node_id]
 
             if target_node.kind != "door" and target_node_id in visited_node_ids:
@@ -267,19 +264,26 @@ def enumerate_semantic_solution_plans(
                 add_plan(_score_semantic_plan(problem, graph, next_steps))
                 continue
 
-            next_has_key = has_key or _node_is_key(problem, target_node)
+            next_state = _collect_node_effects(
+                problem,
+                graph,
+                StaminaOnlyState(
+                    node_id=target_node_id,
+                    remaining_stamina=current_state.remaining_stamina,
+                    collected_items_mask=current_state.collected_items_mask,
+                    has_key=current_state.has_key,
+                ),
+            )
             dfs(
-                target_node_id,
+                next_state,
                 next_steps,
                 frozenset((*visited_node_ids, target_node_id)),
-                next_has_key,
             )
 
     dfs(
-        start_state.node_id,
+        start_state,
         (start_step,),
         frozenset({start_state.node_id}),
-        start_state.has_key,
     )
     return tuple(plans)
 
@@ -360,7 +364,8 @@ def simulate_segment_population(
     blocked_positions = {
         item.position
         for item_index, item in enumerate(problem.items)
-        if item.position not in {source_node.position, target_node.position}
+        if not (collected_items_mask & (1 << item_index))
+        and item.position not in {source_node.position, target_node.position}
     }
     blocked_positions.discard(source_node.position)
     blocked_positions.discard(target_node.position)
@@ -553,8 +558,10 @@ def _score_semantic_plan(
                 semantic_success=False,
             )
 
-        adjacency = graph.open_door_adjacency if door_is_active else graph.closed_door_adjacency
-        edge_cost = _find_edge_cost(adjacency[state.node_id], target_node.node_id)
+        edge_cost = _find_edge_cost(
+            compute_reachable_edges_for_state(problem, graph, state),
+            target_node.node_id,
+        )
 
         if edge_cost is None or state.remaining_stamina < edge_cost:
             scored_steps.append(
@@ -708,13 +715,6 @@ def _has_key(problem: StaminaOnlyHC3Problem, collected_items_mask: int) -> bool:
     return any(
         item.kind == "key" and collected_items_mask & (1 << item_index)
         for item_index, item in enumerate(problem.items)
-    )
-
-
-def _node_is_key(problem: StaminaOnlyHC3Problem, node: StaminaNode) -> bool:
-    return (
-        node.item_index is not None
-        and problem.items[node.item_index].kind == "key"
     )
 
 

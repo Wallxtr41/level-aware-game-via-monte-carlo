@@ -73,6 +73,8 @@ Plan icinde ayni non-door semantic node tekrar ziyaret edilmez. Bu, semantic sev
 
 Kilitli kapi, key alinmadan semantic target olarak enumerate edilmez. Bu durumda kapi sadece yol gibi transit hucredir. Key alindiktan sonra veya kapi basta aciksa door semantic target olarak planlara girebilir.
 
+Toplanmamis item node'lari segment icinde terminal/blok gibi davranir. Toplanmis item node'lari ise sonraki segmentlerde normal yol gibi transit gecilebilir. Bu sayede `start -> key -> stamina -> door` gibi bir plan, `stamina -> door` segmentinde daha once toplanmis key hucrelerinden gecebilir.
+
 Exact dead planlar skorlanirken ilk basarisiz semantic segmente kadar kisalabilir. Farkli full suffix'ler ayni basarisiz prefix'e dusuyorsa bu planlar tekillestirilir; terminalde ayni dead route birden fazla basilmamalidir.
 
 Plan sayisi icin artik yapay bir `max_semantic_plans` limiti yoktur. Ayni non-door semantic node tekrar ziyaret edilmedigi icin plan sayisi sonludur.
@@ -135,7 +137,7 @@ Bu ajan insan oyuncunun tam simuluasyonu degil; iki semantic node arasindaki yer
 
 ## Semantic Blocking
 
-Bir segmentte target disindaki semantic node'lar duvar gibi davranir.
+Bir segmentte target disindaki henuz toplanmamis item semantic node'lari duvar gibi davranir. Daha once toplanmis item node'lari normal yol gibi gecilebilir.
 
 Ornek segment:
 
@@ -148,6 +150,8 @@ Bu segmentte:
 - diger stamina item'lar bloktur
 - kapi aktif degilse yol gibi transit gecilebilir
 - kapi aktifse ve target degilse bloktur
+
+Eger key daha once toplanmis olsaydi, key hucreleri sonraki segmentlerde blok olmazdi.
 
 Bu kural, ajanlarin baska item'larin ustunden transit gecerek segment mantigini bozmasini engeller.
 
@@ -491,7 +495,7 @@ Agent difficulty energy su formulu kullanir:
 ```text
 E =
   difficulty_weight * abs(main_route_difficulty - target_agent_difficulty)
-  + segment_balance_weight * segment_success_std
+  + segment_balance_weight * segment_balance_score
   + dead_segment_weight * dead_segment_ratio
 ```
 
@@ -499,6 +503,7 @@ Burada:
 
 ```text
 main_route_difficulty = 1 - main_route_success_rate
+segment_balance_score = min(1, 2 * segment_success_std)
 ```
 
 Pipeline parametreleri:
@@ -533,6 +538,7 @@ main_route_difficulty
 main_route_success_rate
 main_route_term
 segment_success_std
+segment_balance_score
 segment_balance_term
 dead_segment_ratio
 dead_segment_term

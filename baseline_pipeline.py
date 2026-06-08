@@ -178,6 +178,7 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 f"main_route_success_rate={breakdown.agent_success_rate} "
                 f"main_route_term={breakdown.agent_difficulty_term} "
                 f"segment_success_std={breakdown.segment_balance_penalty} "
+                f"segment_balance_score={breakdown.segment_balance_score} "
                 f"segment_balance_term={breakdown.segment_balance_term} "
                 f"dead_segment_ratio={breakdown.dead_segment_ratio} "
                 f"dead_segment_term={breakdown.dead_segment_term} "

@@ -48,6 +48,7 @@ class EnergyBreakdown:
     agent_difficulty_term: float | None = None
     agent_success_rate: float | None = None
     segment_balance_penalty: float | None = None
+    segment_balance_score: float | None = None
     segment_balance_term: float | None = None
     dead_segment_ratio: float | None = None
     dead_segment_term: float | None = None
@@ -203,7 +204,8 @@ def stamina_agent_difficulty_energy_breakdown(
     difficulty_term = difficulty_weight * abs(
         difficulty_summary.main_route_difficulty - target_agent_difficulty
     )
-    segment_balance_term = segment_balance_weight * difficulty_summary.segment_success_std
+    segment_balance_score = min(1.0, 2.0 * difficulty_summary.segment_success_std)
+    segment_balance_term = segment_balance_weight * segment_balance_score
     dead_segment_term = dead_segment_weight * difficulty_summary.dead_segment_ratio
 
     return EnergyBreakdown(
@@ -214,6 +216,7 @@ def stamina_agent_difficulty_energy_breakdown(
         agent_difficulty_term=difficulty_term,
         agent_success_rate=difficulty_summary.main_route_success_rate,
         segment_balance_penalty=difficulty_summary.segment_success_std,
+        segment_balance_score=segment_balance_score,
         segment_balance_term=segment_balance_term,
         dead_segment_ratio=difficulty_summary.dead_segment_ratio,
         dead_segment_term=dead_segment_term,

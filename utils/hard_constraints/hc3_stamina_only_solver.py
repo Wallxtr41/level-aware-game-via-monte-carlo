@@ -210,6 +210,51 @@ def _compute_adjacency_for_mode(
     return adjacency
 
 
+def compute_reachable_edges_for_state(
+    problem: StaminaOnlyHC3Problem,
+    graph: StaminaOnlyGraph,
+    state: StaminaOnlyState,
+) -> tuple[tuple[int, int], ...]:
+    source_node = graph.nodes[state.node_id]
+    door_is_active = state.has_key or not problem.locked_door
+    active_terminal_positions = {
+        node.position
+        for node in graph.nodes
+        if node.item_index is not None
+        and not (state.collected_items_mask & (1 << node.item_index))
+    }
+
+    if door_is_active:
+        active_terminal_positions.add(problem.door)
+
+    queue = deque([(source_node.position, 0)])
+    visited = {source_node.position}
+    reachable_targets: list[tuple[int, int]] = []
+
+    while queue:
+        (row, col), distance = queue.popleft()
+
+        for next_row, next_col in iter_neighbors(row, col):
+            next_position = (next_row, next_col)
+
+            if next_position in visited:
+                continue
+
+            if not is_walkable(problem.grid, next_row, next_col):
+                continue
+
+            visited.add(next_position)
+            next_distance = distance + 1
+
+            if next_position in active_terminal_positions and next_position != source_node.position:
+                reachable_targets.append((graph.position_to_node[next_position], next_distance))
+                continue
+
+            queue.append((next_position, next_distance))
+
+    return tuple(reachable_targets)
+
+
 def build_stamina_only_hc3_graph(
     problem: StaminaOnlyHC3Problem,
     cache: StaminaOnlyHC3GraphCache | None = None,
@@ -363,10 +408,7 @@ def _analyze_stamina_only_search(
         current_state = frontier.popleft()
         explored_states += 1
 
-        door_is_active = current_state.has_key or not problem.locked_door
-        adjacency = graph.open_door_adjacency if door_is_active else graph.closed_door_adjacency
-
-        for target_node_id, edge_cost in adjacency[current_state.node_id]:
+        for target_node_id, edge_cost in compute_reachable_edges_for_state(problem, graph, current_state):
             next_stamina = current_state.remaining_stamina - edge_cost
 
             if next_stamina < 0:
