@@ -70,7 +70,7 @@ class AgentDifficultyTests(unittest.TestCase):
         self.assertTrue(best_plan.final_stamina_samples)
         self.assertTrue(all(stamina >= 0 for stamina in best_plan.final_stamina_samples))
 
-    def test_unsolved_semantic_plan_contributes_dead_segment_not_main_route(self) -> None:
+    def test_exact_dead_plan_contributes_dead_segment_not_main_route(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
                 "#######",
@@ -81,9 +81,9 @@ class AgentDifficultyTests(unittest.TestCase):
             ),
             start=(1, 1),
             door=(1, 5),
-            items=(ItemPlacement(kind="key", position=(3, 1), value=0),),
-            initial_stamina=20,
-            locked_door=True,
+            items=(ItemPlacement(kind="stamina", position=(3, 1), value=0),),
+            initial_stamina=4,
+            locked_door=False,
         )
 
         plans = enumerate_semantic_solution_plans(problem)
@@ -92,8 +92,8 @@ class AgentDifficultyTests(unittest.TestCase):
             for plan in plans
         }
 
-        self.assertFalse(plan_by_kinds[("start", "door")].semantic_success)
-        self.assertTrue(plan_by_kinds[("start", "item:key", "door")].semantic_success)
+        self.assertTrue(plan_by_kinds[("start", "door")].semantic_success)
+        self.assertFalse(plan_by_kinds[("start", "item:stamina", "door")].semantic_success)
 
         summary = estimate_agent_difficulty(
             problem,
@@ -104,6 +104,26 @@ class AgentDifficultyTests(unittest.TestCase):
         self.assertEqual(summary.best_plan_success_rate, summary.main_route_success_rate)
         self.assertGreater(summary.dead_segment_ratio, 0.0)
         self.assertGreater(summary.dead_segment_count, 0)
+
+    def test_locked_inactive_door_is_not_enumerated_as_target_before_key(self) -> None:
+        problem = StaminaOnlyHC3Problem(
+            grid=grid_from_rows(
+                "########",
+                "#......#",
+                "########",
+            ),
+            start=(1, 1),
+            door=(1, 3),
+            items=(ItemPlacement(kind="key", position=(1, 6), value=0),),
+            initial_stamina=10,
+            locked_door=True,
+        )
+
+        plans = enumerate_semantic_solution_plans(problem)
+        plan_kinds = {tuple(step.kind for step in plan.steps) for plan in plans}
+
+        self.assertNotIn(("start", "door"), plan_kinds)
+        self.assertIn(("start", "item:key", "door"), plan_kinds)
 
     def test_locked_inactive_door_is_transit_inside_agent_segment(self) -> None:
         problem = StaminaOnlyHC3Problem(
@@ -131,7 +151,7 @@ class AgentDifficultyTests(unittest.TestCase):
 
         self.assertEqual(key_plan.segment_summaries[0].success_rate, 1.0)
 
-    def test_dead_segment_ratio_does_not_count_unattempted_suffix_segments(self) -> None:
+    def test_zero_agent_success_does_not_create_dead_segment(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
                 "########",
@@ -150,9 +170,9 @@ class AgentDifficultyTests(unittest.TestCase):
             config=AgentDifficultyConfig(agents_per_segment=0, random_seed=8),
         )
 
-        self.assertEqual(summary.dead_segment_count, 1)
-        self.assertEqual(summary.unique_segment_count, 2)
-        self.assertEqual(summary.dead_segment_ratio, 0.5)
+        self.assertEqual(summary.dead_segment_count, 0)
+        self.assertEqual(summary.unique_segment_count, 1)
+        self.assertEqual(summary.dead_segment_ratio, 0.0)
 
     def test_zero_agent_success_on_exact_segment_is_not_dead_segment(self) -> None:
         problem = StaminaOnlyHC3Problem(

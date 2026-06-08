@@ -235,8 +235,12 @@ def enumerate_semantic_solution_plans(
         current_node_id: int,
         steps: tuple[SemanticPlanStep, ...],
         visited_node_ids: frozenset[int],
+        has_key: bool,
     ) -> None:
-        for target_node_id, edge_cost in _get_candidate_semantic_edges(graph, current_node_id):
+        door_is_active = has_key or not problem.locked_door
+        adjacency = graph.open_door_adjacency if door_is_active else graph.closed_door_adjacency
+
+        for target_node_id, edge_cost in adjacency[current_node_id]:
             target_node = graph.nodes[target_node_id]
 
             if target_node.kind != "door" and target_node_id in visited_node_ids:
@@ -253,13 +257,20 @@ def enumerate_semantic_solution_plans(
                 plans.append(_score_semantic_plan(problem, graph, next_steps))
                 continue
 
+            next_has_key = has_key or _node_is_key(problem, target_node)
             dfs(
                 target_node_id,
                 next_steps,
                 frozenset((*visited_node_ids, target_node_id)),
+                next_has_key,
             )
 
-    dfs(start_state.node_id, (start_step,), frozenset({start_state.node_id}))
+    dfs(
+        start_state.node_id,
+        (start_step,),
+        frozenset({start_state.node_id}),
+        start_state.has_key,
+    )
     return tuple(plans)
 
 
@@ -492,22 +503,6 @@ def _choose_next_position(
     return rng.choice(valid_neighbors), True
 
 
-def _get_candidate_semantic_edges(
-    graph: StaminaOnlyGraph,
-    node_id: int,
-) -> tuple[tuple[int, int], ...]:
-    edge_cost_by_target: dict[int, int] = {}
-
-    for adjacency in (graph.closed_door_adjacency, graph.open_door_adjacency):
-        for target_node_id, edge_cost in adjacency[node_id]:
-            existing_cost = edge_cost_by_target.get(target_node_id)
-
-            if existing_cost is None or edge_cost < existing_cost:
-                edge_cost_by_target[target_node_id] = edge_cost
-
-    return tuple(sorted(edge_cost_by_target.items()))
-
-
 def _score_semantic_plan(
     problem: StaminaOnlyHC3Problem,
     graph: StaminaOnlyGraph,
@@ -703,6 +698,13 @@ def _has_key(problem: StaminaOnlyHC3Problem, collected_items_mask: int) -> bool:
     return any(
         item.kind == "key" and collected_items_mask & (1 << item_index)
         for item_index, item in enumerate(problem.items)
+    )
+
+
+def _node_is_key(problem: StaminaOnlyHC3Problem, node: StaminaNode) -> bool:
+    return (
+        node.item_index is not None
+        and problem.items[node.item_index].kind == "key"
     )
 
 

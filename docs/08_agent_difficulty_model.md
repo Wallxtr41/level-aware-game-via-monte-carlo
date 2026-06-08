@@ -71,6 +71,8 @@ Bir plan door'a ulasan semantic siralama ise listeye eklenir. Planin exact olara
 
 Plan icinde ayni non-door semantic node tekrar ziyaret edilmez. Bu, semantic seviyede gereksiz cycle olusmasini engeller.
 
+Kilitli kapi, key alinmadan semantic target olarak enumerate edilmez. Bu durumda kapi sadece yol gibi transit hucredir. Key alindiktan sonra veya kapi basta aciksa door semantic target olarak planlara girebilir.
+
 Plan sayisi icin artik yapay bir `max_semantic_plans` limiti yoktur. Ayni non-door semantic node tekrar ziyaret edilmedigi icin plan sayisi sonludur.
 
 ## Semantic Plan Verisi
