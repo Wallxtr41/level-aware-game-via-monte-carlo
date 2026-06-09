@@ -44,6 +44,10 @@ class EnergyBreakdown:
     remaining_stamina_actual: float | None = None
     remaining_stamina_term: float | None = None
     remaining_stamina_score: float | None = None
+    spacing_target: float | None = None
+    spacing_actual: float | None = None
+    spacing_score: float | None = None
+    spacing_term: float | None = None
     agent_difficulty_target: float | None = None
     agent_difficulty_actual: float | None = None
     agent_difficulty_term: float | None = None
@@ -171,6 +175,8 @@ def stamina_agent_difficulty_energy(
     dead_segment_weight: float = 10.0,
     final_stamina_weight: float = 10.0,
     final_stamina_target_factor: float = 0.8,
+    spacing_weight: float = 10.0,
+    spacing_target_scale: float = 1.5,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> float:
     breakdown = stamina_agent_difficulty_energy_breakdown(
@@ -181,6 +187,8 @@ def stamina_agent_difficulty_energy(
         dead_segment_weight=dead_segment_weight,
         final_stamina_weight=final_stamina_weight,
         final_stamina_target_factor=final_stamina_target_factor,
+        spacing_weight=spacing_weight,
+        spacing_target_scale=spacing_target_scale,
         agent_config=agent_config,
     )
     return breakdown.total_energy
@@ -194,6 +202,8 @@ def stamina_agent_difficulty_energy_breakdown(
     dead_segment_weight: float = 10.0,
     final_stamina_weight: float = 10.0,
     final_stamina_target_factor: float = 0.8,
+    spacing_weight: float = 10.0,
+    spacing_target_scale: float = 1.5,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> EnergyBreakdown:
     difficulty_summary = estimate_agent_difficulty(
@@ -214,18 +224,41 @@ def stamina_agent_difficulty_energy_breakdown(
     segment_balance_score = min(1.0, 2.0 * difficulty_summary.segment_success_std)
     segment_balance_term = segment_balance_weight * segment_balance_score
     dead_segment_term = dead_segment_weight * difficulty_summary.dead_segment_ratio
-    final_stamina_target = final_stamina_target_factor * state.initial_stamina * target_agent_difficulty
+    final_stamina_difficulty_scale = 1.0 - target_agent_difficulty
+    final_stamina_target = (
+        final_stamina_target_factor
+        * state.initial_stamina
+        * final_stamina_difficulty_scale
+    )
     weighted_final_stamina = _weighted_agent_final_stamina(difficulty_summary)
-    max_possible_stamina = _max_possible_stamina(state)
+    stamina_normalizer = max(1.0, float(state.initial_stamina))
     final_stamina_score = min(
         1.0,
-        abs(final_stamina_target - weighted_final_stamina) / max_possible_stamina,
+        abs(final_stamina_target - weighted_final_stamina) / stamina_normalizer,
     )
     final_stamina_term = final_stamina_weight * final_stamina_score
+    spacing_actual = _start_key_door_path_spacing(state)
+    spacing_target = _target_path_spacing(
+        state=state,
+        target_agent_difficulty=target_agent_difficulty,
+        spacing_target_scale=spacing_target_scale,
+    )
+    spacing_normalizer = _spacing_normalizer(
+        state=state,
+        spacing_target_scale=spacing_target_scale,
+    )
+    spacing_score = min(1.0, abs(spacing_target - spacing_actual) / spacing_normalizer)
+    spacing_term = spacing_weight * spacing_score
 
     return EnergyBreakdown(
         mode="stamina_agent_difficulty",
-        total_energy=difficulty_term + segment_balance_term + dead_segment_term + final_stamina_term,
+        total_energy=(
+            difficulty_term
+            + segment_balance_term
+            + dead_segment_term
+            + final_stamina_term
+            + spacing_term
+        ),
         agent_difficulty_target=target_agent_difficulty,
         agent_difficulty_actual=difficulty_summary.main_route_difficulty,
         agent_difficulty_term=difficulty_term,
@@ -234,6 +267,10 @@ def stamina_agent_difficulty_energy_breakdown(
         remaining_stamina_actual=weighted_final_stamina,
         remaining_stamina_score=final_stamina_score,
         remaining_stamina_term=final_stamina_term,
+        spacing_target=spacing_target,
+        spacing_actual=spacing_actual,
+        spacing_score=spacing_score,
+        spacing_term=spacing_term,
         segment_balance_penalty=difficulty_summary.segment_success_std,
         segment_balance_score=segment_balance_score,
         segment_balance_term=segment_balance_term,
@@ -250,6 +287,8 @@ def make_stamina_agent_difficulty_energy(
     dead_segment_weight: float = 10.0,
     final_stamina_weight: float = 10.0,
     final_stamina_target_factor: float = 0.8,
+    spacing_weight: float = 10.0,
+    spacing_target_scale: float = 1.5,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> Callable[[StaminaAwareEnergyState], float]:
     def energy_function(state: StaminaAwareEnergyState) -> float:
@@ -261,6 +300,8 @@ def make_stamina_agent_difficulty_energy(
             dead_segment_weight=dead_segment_weight,
             final_stamina_weight=final_stamina_weight,
             final_stamina_target_factor=final_stamina_target_factor,
+            spacing_weight=spacing_weight,
+            spacing_target_scale=spacing_target_scale,
             agent_config=agent_config,
         )
 
@@ -293,13 +334,57 @@ def _weighted_agent_final_stamina(difficulty_summary: AgentDifficultySummary) ->
     return weighted_stamina_sum / success_rate_sum
 
 
-def _max_possible_stamina(state: StaminaAwareEnergyState) -> float:
-    item_stamina = sum(
-        getattr(item, "value", 0)
-        for item in state.items
-        if getattr(item, "kind", None) == "stamina"
+def _start_key_door_path_spacing(state: StaminaAwareEnergyState) -> float:
+    key_item = next(
+        (item for item in state.items if getattr(item, "kind", None) == "key"),
+        None,
     )
-    return max(1.0, float(state.initial_stamina + item_stamina))
+
+    if key_item is None:
+        return float(_shortest_path_distance_or_zero(state.grid, state.start, state.door))
+
+    distances = (
+        _shortest_path_distance_or_zero(state.grid, state.start, key_item.position),
+        _shortest_path_distance_or_zero(state.grid, key_item.position, state.door),
+        _shortest_path_distance_or_zero(state.grid, state.start, state.door),
+    )
+    return sum(distances) / len(distances)
+
+
+def _shortest_path_distance_or_zero(
+    grid: list[list[int]],
+    first_position: tuple[int, int],
+    second_position: tuple[int, int],
+) -> float:
+    distance = shortest_path_length(grid, first_position, second_position)
+
+    if distance is None:
+        return 0.0
+
+    return float(distance)
+
+
+def _target_path_spacing(
+    state: StaminaAwareEnergyState,
+    target_agent_difficulty: float,
+    spacing_target_scale: float,
+) -> float:
+    grid_scale = _grid_path_scale(state.grid)
+    difficulty_scale = 0.5 + (0.5 * target_agent_difficulty)
+    return spacing_target_scale * grid_scale * difficulty_scale
+
+
+def _spacing_normalizer(
+    state: StaminaAwareEnergyState,
+    spacing_target_scale: float,
+) -> float:
+    return max(1.0, 2.0 * spacing_target_scale * _grid_path_scale(state.grid))
+
+
+def _grid_path_scale(grid: list[list[int]]) -> float:
+    height = len(grid)
+    width = len(grid[0]) if height else 0
+    return math.sqrt(max(1, height * width))
 
 
 def path_length_energy_breakdown(

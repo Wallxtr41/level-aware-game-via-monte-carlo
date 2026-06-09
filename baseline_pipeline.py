@@ -47,6 +47,8 @@ SEGMENT_BALANCE_WEIGHT = 15.0
 DEAD_SEGMENT_WEIGHT = 0
 FINAL_STAMINA_WEIGHT = 10.0
 FINAL_STAMINA_TARGET_FACTOR = 0.8
+SPACING_WEIGHT = 10.0
+SPACING_TARGET_SCALE = 1.5
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
@@ -80,6 +82,8 @@ STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
     dead_segment_weight=DEAD_SEGMENT_WEIGHT,
     final_stamina_weight=FINAL_STAMINA_WEIGHT,
     final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
+    spacing_weight=SPACING_WEIGHT,
+    spacing_target_scale=SPACING_TARGET_SCALE,
     agent_config=AGENT_DIFFICULTY_CONFIG,
 )
 
@@ -176,6 +180,8 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 dead_segment_weight=DEAD_SEGMENT_WEIGHT,
                 final_stamina_weight=FINAL_STAMINA_WEIGHT,
                 final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
+                spacing_weight=SPACING_WEIGHT,
+                spacing_target_scale=SPACING_TARGET_SCALE,
                 agent_config=AGENT_DIFFICULTY_CONFIG,
             )
             return (
@@ -192,6 +198,10 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 f"weighted_final_stamina={breakdown.remaining_stamina_actual} "
                 f"final_stamina_score={breakdown.remaining_stamina_score} "
                 f"final_stamina_term={breakdown.remaining_stamina_term} "
+                f"spacing_target={breakdown.spacing_target} "
+                f"spacing_actual={breakdown.spacing_actual} "
+                f"spacing_score={breakdown.spacing_score} "
+                f"spacing_term={breakdown.spacing_term} "
                 f"total={breakdown.total_energy}"
             )
 
@@ -225,6 +235,8 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         dead_segment_weight=DEAD_SEGMENT_WEIGHT,
         final_stamina_weight=FINAL_STAMINA_WEIGHT,
         final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
+        spacing_weight=SPACING_WEIGHT,
+        spacing_target_scale=SPACING_TARGET_SCALE,
         agent_config=AGENT_DIFFICULTY_CONFIG,
     )
     summary = breakdown.agent_difficulty_summary
@@ -249,6 +261,12 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
             f"weighted_final_stamina={breakdown.remaining_stamina_actual:.3f} "
             f"final_stamina_score={breakdown.remaining_stamina_score:.3f} "
             f"final_stamina_term={breakdown.remaining_stamina_term:.3f}"
+        ),
+        (
+            f"spacing_target={breakdown.spacing_target:.3f} "
+            f"spacing_actual={breakdown.spacing_actual:.3f} "
+            f"spacing_score={breakdown.spacing_score:.3f} "
+            f"spacing_term={breakdown.spacing_term:.3f}"
         ),
     ]
 

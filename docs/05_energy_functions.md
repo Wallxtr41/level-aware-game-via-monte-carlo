@@ -109,29 +109,119 @@ Kodda sadece toplam energy degil, terimlere ayrilmis hali de uretilir.
 Detayli ajan davranisi ve sample propagation aciklamasi icin:
 - [08_agent_difficulty_model.md](08_agent_difficulty_model.md)
 
-Yeni agent difficulty energy ajan tabanli zorluk terimlerini kullanir. Bu modelde `target_path` ve `target_final_stamina` energy hesabina girmez.
+Yeni agent difficulty energy ajan tabanli zorluk terimlerini kullanir. Bu modelde eski `TARGET_PATH_LENGTH` kullanilmaz. Baseline'daki sabit `TARGET_FINAL_STAMINA` da kullanilmaz; onun yerine `TARGET_AGENT_DIFFICULTY` degerinden turetilen dinamik bir final stamina hedefi kullanilir.
 
-Formul:
+Kisa notasyon:
+- `D_target`: `TARGET_AGENT_DIFFICULTY`, 0 ile 1 arasinda hedef zorluk
+- `D_main`: exact cozulebilen route'larin agent zorlugu
+- `IS`: initial stamina
+- `F`: `FINAL_STAMINA_TARGET_FACTOR`
+- `R_i`: exact cozulebilen plan `i` icin agent estimated success rate
+- `S_i`: exact cozulebilen plan `i` icin basarili ajanlarin ortalama final stamina degeri
+- `std_segments`: unique simule edilmis segment success rate'lerinin standart sapmasi
+- `dead_ratio`: unique dead segment orani
+
+Toplam enerji:
 
 ```text
-E =
-  w_difficulty * |D_main_route - D_target|
-  + w_balance * segment_balance_score
-  + w_dead * dead_segment_ratio
-  + w_final_stamina * final_stamina_score
+E_total =
+  E_difficulty
+  + E_segment_balance
+  + E_dead_segment
+  + E_final_stamina
+  + E_spacing
 ```
 
-Burada:
-- `D_main_route`: sadece exact cozulebilen route'larin agent zorlugu
-- `D_target`: hedef zorluk
-- `w_difficulty`: difficulty teriminin agirligi
-- `segment_success_std`: unique simule edilmis segment success rate'lerinin standart sapmasi
-- `segment_balance_score`: `2 * segment_success_std` ile normalize edilmis balance skoru
-- `dead_segment_ratio`: unique dead segment orani
-- `w_balance`: segment dengesizligi ceza agirligi
-- `w_dead`: dead segment ceza agirligi
-- `final_stamina_score`: success-rate agirlikli final stamina hedefinden normalize sapma
-- `w_final_stamina`: final stamina ceza agirligi
+Difficulty terimi:
+
+```text
+main_route_success_rate =
+  average(R_i for exact-solvable plans)
+
+D_main =
+  1 - main_route_success_rate
+
+E_difficulty =
+  AGENT_DIFFICULTY_WEIGHT
+  * abs(D_main - D_target)
+```
+
+Segment denge terimi:
+
+```text
+segment_balance_score =
+  min(1, 2 * std_segments)
+
+E_segment_balance =
+  SEGMENT_BALANCE_WEIGHT
+  * segment_balance_score
+```
+
+Dead segment terimi:
+
+```text
+dead_ratio =
+  dead_unique_segments / all_unique_segments
+
+E_dead_segment =
+  DEAD_SEGMENT_WEIGHT
+  * dead_ratio
+```
+
+Final stamina terimi:
+
+```text
+target_final_stamina =
+  F * IS * (1 - D_target)
+
+weighted_final_stamina =
+  sum(R_i * S_i) / sum(R_i)
+
+final_stamina_score =
+  min(
+    1,
+    abs(target_final_stamina - weighted_final_stamina)
+    / max(1, IS)
+  )
+
+E_final_stamina =
+  FINAL_STAMINA_WEIGHT
+  * final_stamina_score
+```
+
+Bu ters oranti bilincli:
+- `D_target` yuksekse hedef final stamina dusuk olur
+- `D_target` dusukse hedef final stamina yuksek olur
+
+Spacing terimi:
+
+```text
+spacing_actual =
+  average(
+    shortest_path(start, key),
+    shortest_path(key, door),
+    shortest_path(start, door)
+  )
+
+grid_scale =
+  sqrt(grid_width * grid_height)
+
+spacing_target =
+  SPACING_TARGET_SCALE
+  * grid_scale
+  * (0.5 + 0.5 * D_target)
+
+spacing_score =
+  min(
+    1,
+    abs(spacing_target - spacing_actual)
+    / (2 * SPACING_TARGET_SCALE * grid_scale)
+  )
+
+E_spacing =
+  SPACING_WEIGHT
+  * spacing_score
+```
 
 `baseline_pipeline.py` icindeki ilgili parametreler:
 - `TARGET_AGENT_DIFFICULTY`
@@ -140,6 +230,8 @@ Burada:
 - `DEAD_SEGMENT_WEIGHT`
 - `FINAL_STAMINA_WEIGHT`
 - `FINAL_STAMINA_TARGET_FACTOR`
+- `SPACING_WEIGHT`
+- `SPACING_TARGET_SCALE`
 - `AGENTS_PER_SEGMENT`
 - `AGENT_DIFFICULTY_SEED`
 
@@ -206,16 +298,50 @@ Bu ayrim sunu engeller:
 Final stamina terimi exact solvable planlarin basarili agent sonuclarindan hesaplanir:
 
 ```text
-target_final_stamina = FINAL_STAMINA_TARGET_FACTOR * initial_stamina * TARGET_AGENT_DIFFICULTY
+target_final_stamina =
+  FINAL_STAMINA_TARGET_FACTOR
+  * initial_stamina
+  * (1 - TARGET_AGENT_DIFFICULTY)
+
 weighted_final_stamina =
   sum(plan_success_rate * avg_final_stamina_for_plan)
   / sum(plan_success_rate)
+
 final_stamina_score =
-  abs(target_final_stamina - weighted_final_stamina)
-  / max_possible_stamina
+  min(
+    1,
+    abs(target_final_stamina - weighted_final_stamina)
+    / max(1, initial_stamina)
+  )
 ```
 
-Burada `max_possible_stamina`, initial stamina ve tum stamina item bonuslarinin toplamidir. Bu normalizasyon final stamina terimini 0-1 araligina getirir.
+Bu normalizasyon final stamina terimini initial stamina scale'ine getirir. Burada `(1 - TARGET_AGENT_DIFFICULTY)` kullanilir; hedef zorluk arttikca beklenen final stamina azalir.
+
+Spacing terimi start, key ve door'un grid uzerindeki en kisa yol uzakliklarini kullanir:
+
+```text
+spacing_actual =
+  average(
+    shortest_path(start, key),
+    shortest_path(key, door),
+    shortest_path(start, door)
+  )
+
+grid_scale = sqrt(grid_width * grid_height)
+spacing_target =
+  SPACING_TARGET_SCALE
+  * grid_scale
+  * (0.5 + 0.5 * TARGET_AGENT_DIFFICULTY)
+
+spacing_score =
+  min(
+    1,
+    abs(spacing_target - spacing_actual)
+    / (2 * SPACING_TARGET_SCALE * grid_scale)
+  )
+```
+
+Key yoksa sadece `start -> door` uzakligi kullanilir. `spacing_actual` ve `spacing_target` terminalde ham path uzunlugu olarak gorunur; enerjiye giren normalize edilmis deger `spacing_score` alanidir. Bu terim ozellikle start-key-door uclusunun birbirine yapismasini cezalandirmak icindir.
 
 ## Deterministic Randomness
 

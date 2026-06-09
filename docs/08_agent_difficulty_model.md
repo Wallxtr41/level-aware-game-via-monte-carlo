@@ -498,6 +498,7 @@ E =
   + segment_balance_weight * segment_balance_score
   + dead_segment_weight * dead_segment_ratio
   + final_stamina_weight * final_stamina_score
+  + spacing_weight * spacing_score
 ```
 
 Burada:
@@ -505,9 +506,12 @@ Burada:
 ```text
 main_route_difficulty = 1 - main_route_success_rate
 segment_balance_score = min(1, 2 * segment_success_std)
-target_final_stamina = final_stamina_target_factor * initial_stamina * target_agent_difficulty
+target_final_stamina = final_stamina_target_factor * initial_stamina * (1 - target_agent_difficulty)
 weighted_final_stamina = sum(plan_success_rate * avg_final_stamina_for_plan) / sum(plan_success_rate)
-final_stamina_score = abs(target_final_stamina - weighted_final_stamina) / max_possible_stamina
+final_stamina_score = min(1, abs(target_final_stamina - weighted_final_stamina) / max(1, initial_stamina))
+grid_scale = sqrt(grid_width * grid_height)
+spacing_target = spacing_target_scale * grid_scale * (0.5 + 0.5 * target_agent_difficulty)
+spacing_score = min(1, abs(spacing_target - spacing_actual) / (2 * spacing_target_scale * grid_scale))
 ```
 
 Pipeline parametreleri:
@@ -520,6 +524,8 @@ SEGMENT_BALANCE_WEIGHT = 10.0
 DEAD_SEGMENT_WEIGHT = 10.0
 FINAL_STAMINA_WEIGHT = 10.0
 FINAL_STAMINA_TARGET_FACTOR = 0.8
+SPACING_WEIGHT = 10.0
+SPACING_TARGET_SCALE = 1.5
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 ```
@@ -552,6 +558,10 @@ target_weighted_final_stamina
 weighted_final_stamina
 final_stamina_score
 final_stamina_term
+spacing_target
+spacing_actual
+spacing_score
+spacing_term
 ```
 
 Ayrica `Agent difficulty summary` blogu basilir.
