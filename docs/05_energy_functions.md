@@ -2,6 +2,9 @@
 
 Bu dosya, projedeki energy fonksiyonlarinin neyi olctugunu aciklar.
 
+Daha matematiksel ve detayli formuller icin:
+- [latex/energy_functions.tex](latex/energy_functions.tex)
+
 ## Neden Energy Var
 
 MCMC zincirinin bir candidate state'i iyi ya da kotu olarak degerlendirebilmesi icin sayisal bir hedef gerekir.

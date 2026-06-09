@@ -1,0 +1,632 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{hyperref}
+
+\geometry{margin=1in}
+
+\title{Monte Carlo Maze Energy Functions}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Genel Kural}
+
+MCMC sisteminde her state $s$ icin bir enerji degeri hesaplanir.
+Enerji ne kadar dusukse state o kadar iyi kabul edilir.
+
+\[
+E(s) \downarrow \quad \Longrightarrow \quad s \text{ daha iyi}
+\]
+
+Metropolis-Hastings kabul kuralinda bu enerji farki kullanilir.
+
+\section{Temel Notasyon}
+
+\begin{tabular}{|l|p{0.68\linewidth}|}
+\hline
+Sembol & Anlam \\
+\hline
+$s$ & MCMC state: grid, start, door, itemlar, initial stamina ve locked door bilgisi. \\
+\hline
+$I$ & Initial stamina. Kodda \texttt{state.initial\_stamina}. \\
+\hline
+$D^\star$ & Target agent difficulty. Kodda \texttt{TARGET\_AGENT\_DIFFICULTY}. Aralik olarak $[0,1]$ varsayilir. \\
+\hline
+$W_D$ & Difficulty term agirligi. Kodda \texttt{AGENT\_DIFFICULTY\_WEIGHT}. \\
+\hline
+$W_B$ & Segment balance term agirligi. Kodda \texttt{SEGMENT\_BALANCE\_WEIGHT}. \\
+\hline
+$W_H$ & Dead segment term agirligi. Kodda \texttt{DEAD\_SEGMENT\_WEIGHT}. \\
+\hline
+$W_F$ & Final stamina term agirligi. Kodda \texttt{FINAL\_STAMINA\_WEIGHT}. \\
+\hline
+$W_X$ & Spacing term agirligi. Kodda \texttt{SPACING\_WEIGHT}. \\
+\hline
+$F$ & Final stamina target factor. Kodda \texttt{FINAL\_STAMINA\_TARGET\_FACTOR}. \\
+\hline
+$K_X$ & Spacing target scale. Kodda \texttt{SPACING\_TARGET\_SCALE}. \\
+\hline
+\end{tabular}
+
+\section{\texttt{door\_only} Energy}
+
+Bu en basit baseline enerji fonksiyonudur.
+Sadece start ile door arasindaki en kisa yol uzunluguna bakar.
+
+\[
+E_{\text{door}}(s)
+= \left| L(s) - L^\star \right|
+\]
+
+Burada:
+
+\begin{itemize}
+  \item $L(s)$: grid uzerinde \texttt{start -> door} en kisa yol uzunlugu.
+  \item $L^\star$: hedef yol uzunlugu. Kodda \texttt{TARGET\_PATH\_LENGTH}.
+\end{itemize}
+
+Eger door'a ulasilamiyorsa:
+
+\[
+E_{\text{door}}(s) = \infty
+\]
+
+Bu modda stamina, key ve item semantigi yoktur.
+
+\section{\texttt{stamina\_only} Baseline Energy}
+
+Bu eski stamina-aware baseline enerji fonksiyonudur.
+HC3 solver exact olarak haritanin cozulebilir olup olmadigini hesaplar.
+
+\[
+E_{\text{base}}(s)
+=
+w_P \left| P(s) - P^\star \right|
++
+w_R \left| R_{\text{best}}(s) - R^\star \right|
+\]
+
+Burada:
+
+\begin{itemize}
+  \item $P(s)$: exact basarili cozumler icindeki en kisa basarili cozum maliyeti.
+  \item $P^\star$: hedef cozum uzunlugu. Kodda \texttt{TARGET\_PATH\_LENGTH}.
+  \item $R_{\text{best}}(s)$: door'a varinca kalan en iyi stamina.
+  \item $R^\star$: hedef final stamina. Kodda \texttt{TARGET\_FINAL\_STAMINA}.
+  \item $w_P$: path term agirligi.
+  \item $w_R$: remaining stamina term agirligi.
+\end{itemize}
+
+Exact cozum path maliyeti su sekilde yorumlanir:
+
+\[
+P(s)
+=
+I
++
+C_{\text{stamina}}
+-
+R_{\text{final}}
+\]
+
+Burada:
+
+\begin{itemize}
+  \item $I$: initial stamina.
+  \item $C_{\text{stamina}}$: cozum boyunca toplanan stamina item degerlerinin toplami.
+  \item $R_{\text{final}}$: door'a ulasildiginda kalan stamina.
+\end{itemize}
+
+Harita exact olarak cozulemezse:
+
+\[
+E_{\text{base}}(s) = \infty
+\]
+
+\section{Agent Difficulty Energy}
+
+Guncel difficulty-aware stamina energy fonksiyonu birden fazla terimden olusur:
+
+\[
+E_{\text{agent}}(s)
+=
+E_D(s)
++
+E_B(s)
++
+E_H(s)
++
+E_F(s)
++
+E_X(s)
+\]
+
+Terimler:
+
+\begin{itemize}
+  \item $E_D$: main route difficulty hedefinden sapma.
+  \item $E_B$: segmentler arasi zorluk dengesizligi.
+  \item $E_H$: exact dead segment orani.
+  \item $E_F$: final stamina hedefinden sapma.
+  \item $E_X$: start-key-door spacing hedefinden sapma.
+\end{itemize}
+
+\subsection{Semantic Plan ve Agent Success Rate}
+
+HC3 semantic graph uzerinde door'a giden simple semantic planlar uretilir.
+Exact olarak cozulebilen planlar kumesi:
+
+\[
+\mathcal{P}_{\text{solv}}
+=
+\{p_i \mid p_i \text{ exact-solvable}\}
+\]
+
+Her exact-solvable plan $p_i$ segmentlerden olusur:
+
+\[
+p_i = (e_{i,1}, e_{i,2}, \ldots, e_{i,m_i})
+\]
+
+Segment $e_{i,j}$ icin agent success rate:
+
+\[
+q_{i,j}
+=
+\frac{
+  \#\text{successful agents on segment } e_{i,j}
+}{
+  \#\text{agents simulated on segment } e_{i,j}
+}
+\]
+
+Plan success rate segment success rate carpimidir:
+
+\[
+R_i
+=
+\prod_{j=1}^{m_i} q_{i,j}
+\]
+
+Exact-dead planlar icin agent calistirilmaz ve plan success rate $0$ kabul edilir.
+Ancak bu planlar main route average'a katilmaz; dead segment term icinde temsil edilir.
+
+\subsection{Difficulty Term}
+
+Exact-solvable planlarin ortalama success rate'i:
+
+\[
+\bar{R}
+=
+\frac{1}{|\mathcal{P}_{\text{solv}}|}
+\sum_{p_i \in \mathcal{P}_{\text{solv}}} R_i
+\]
+
+Main route difficulty:
+
+\[
+D_{\text{main}}
+=
+1 - \bar{R}
+\]
+
+Difficulty energy:
+
+\[
+E_D(s)
+=
+W_D
+\left|
+D_{\text{main}}
+-
+D^\star
+\right|
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item $D_{\text{main}}$ hedefe yakin ise bu terim dusuk olur.
+  \item Agentlar cok kolay geciyorsa $\bar{R}$ yuksek, $D_{\text{main}}$ dusuk olur.
+  \item Agentlar zor geciyorsa $\bar{R}$ dusuk, $D_{\text{main}}$ yuksek olur.
+\end{itemize}
+
+\subsection{Segment Balance Term}
+
+Unique simulated segmentler kumesi:
+
+\[
+\mathcal{U}
+=
+\{u_1, u_2, \ldots, u_n\}
+\]
+
+Ayni semantic segment birden fazla plan context'inde gorunurse, o segmentin success rate'i ortalama ile tekillestirilir:
+
+\[
+a_k
+=
+\text{average success rate for unique segment } u_k
+\]
+
+Bu segment success rate'lerinin ortalamasi:
+
+\[
+\bar{a}
+=
+\frac{1}{n}
+\sum_{k=1}^{n} a_k
+\]
+
+Standart sapma:
+
+\[
+\sigma_{\text{seg}}
+=
+\sqrt{
+  \frac{1}{n}
+  \sum_{k=1}^{n}
+  (a_k - \bar{a})^2
+}
+\]
+
+Normalize balance score:
+
+\[
+B_{\text{score}}
+=
+\min(1, 2\sigma_{\text{seg}})
+\]
+
+Segment balance energy:
+
+\[
+E_B(s)
+=
+W_B B_{\text{score}}
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Segment success rate'leri birbirine yakin ise $\sigma_{\text{seg}}$ dusuk olur.
+  \item Bir segment cok kolay, digeri cok zor ise $\sigma_{\text{seg}}$ yuksek olur.
+  \item Bu terim zorlugun tek bir segmente yigilmamasini hedefler.
+\end{itemize}
+
+\subsection{Dead Segment Term}
+
+Exact-dead planlarda ilk exact basarisiz semantic segment dead segment olarak sayilir.
+Unique dead segment kumesi:
+
+\[
+\mathcal{H}
+\]
+
+Tum ilgili unique segmentler:
+
+\[
+\mathcal{V}
+=
+\mathcal{U}
+\cup
+\mathcal{H}
+\]
+
+Dead segment ratio:
+
+\[
+H_{\text{ratio}}
+=
+\frac{|\mathcal{H}|}{|\mathcal{V}|}
+\]
+
+Dead segment energy:
+
+\[
+E_H(s)
+=
+W_H H_{\text{ratio}}
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Bu terim exact olarak hic calismayan semantic baglantilari cezalandirir.
+  \item Dead route suffix'leri tekrar tekrar sayilmaz; unique dead segment sayilir.
+  \item Eger \texttt{DEAD\_SEGMENT\_WEIGHT = 0} ise bu terim enerjiye etki etmez ama summary'de gorunmeye devam eder.
+\end{itemize}
+
+\subsection{Final Stamina Term}
+
+Hedef final stamina:
+
+\[
+T_F
+=
+F \cdot I \cdot (1 - D^\star)
+\]
+
+Burada difficulty ile ters oranti vardir.
+Zorluk hedefi yuksekse, door'a ulasildiginda daha az stamina kalmasi beklenir.
+
+Plan $p_i$ icin basarili agent final stamina ortalamasi:
+
+\[
+S_i
+=
+\text{average final stamina samples for plan } p_i
+\]
+
+Success-rate agirlikli final stamina:
+
+\[
+\bar{S}
+=
+\frac{
+  \sum_{p_i \in \mathcal{P}_{\text{solv}}}
+  R_i S_i
+}{
+  \sum_{p_i \in \mathcal{P}_{\text{solv}}}
+  R_i
+}
+\]
+
+Kodda payda $0$ ise $\bar{S}=0$ kabul edilir.
+
+Normalize final stamina score:
+
+\[
+F_{\text{score}}
+=
+\min
+\left(
+1,
+\frac{
+  |T_F - \bar{S}|
+}{
+  \max(1, I)
+}
+\right)
+\]
+
+Final stamina energy:
+
+\[
+E_F(s)
+=
+W_F F_{\text{score}}
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Bu terim cozum sonunda kalan stamina'yi hedefler.
+  \item Yuksek difficulty icin hedef final stamina dusuktur.
+  \item Dusuk difficulty icin hedef final stamina daha yuksektir.
+  \item Normalizasyon initial stamina ile yapilir.
+\end{itemize}
+
+\subsection{Spacing Term}
+
+Grid scale:
+
+\[
+G
+=
+\sqrt{\texttt{GRID\_WIDTH} \cdot \texttt{GRID\_HEIGHT}}
+\]
+
+Key varsa actual spacing:
+
+\[
+X_{\text{actual}}
+=
+\frac{
+  d(\text{start}, \text{key})
+  +
+  d(\text{key}, \text{door})
+  +
+  d(\text{start}, \text{door})
+}{3}
+\]
+
+Key yoksa:
+
+\[
+X_{\text{actual}}
+=
+d(\text{start}, \text{door})
+\]
+
+Burada $d(a,b)$ grid uzerinde shortest-path mesafesidir.
+
+Spacing target:
+
+\[
+X^\star
+=
+K_X
+\cdot
+G
+\cdot
+(0.5 + 0.5D^\star)
+\]
+
+Normalize spacing score:
+
+\[
+X_{\text{score}}
+=
+\min
+\left(
+1,
+\frac{
+  |X^\star - X_{\text{actual}}|
+}{
+  2K_XG
+}
+\right)
+\]
+
+Spacing energy:
+
+\[
+E_X(s)
+=
+W_X X_{\text{score}}
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Bu terim start, key ve door'un birbirine yapismasini cezalandirir.
+  \item Difficulty arttikca target spacing artar.
+  \item Mesafe Manhattan degil, shortest-path mesafesidir.
+\end{itemize}
+
+\section{Auto Initial Stamina Formula}
+
+\texttt{stamina\_only} config'inde \texttt{initial\_stamina = None} ise initial stamina otomatik uretilir.
+Bu deger MCMC proposal'lari sirasinda degismez.
+
+Grid scale:
+
+\[
+G
+=
+\sqrt{\texttt{GRID\_WIDTH} \cdot \texttt{GRID\_HEIGHT}}
+\]
+
+Ortalama initial stamina:
+
+\[
+\mu_I
+=
+G
+\left(
+B_I
++
+A_I D^\star
+\right)
+\]
+
+Burada:
+
+\begin{itemize}
+  \item $B_I$: \texttt{INITIAL\_STAMINA\_BASE\_SCALE}
+  \item $A_I$: \texttt{INITIAL\_STAMINA\_DIFFICULTY\_SCALE}
+\end{itemize}
+
+Normal sapma:
+
+\[
+\sigma_I
+=
+G
+\cdot
+\texttt{INITIAL\_STAMINA\_NOISE\_STD\_SCALE}
+\]
+
+Sample:
+
+\[
+I_{\text{sample}}
+\sim
+\mathcal{N}(\mu_I, \sigma_I)
+\]
+
+Clamp limitleri:
+
+\[
+I_{\min}
+=
+G
+\cdot
+\texttt{MIN\_INITIAL\_STAMINA\_SCALE}
+\]
+
+\[
+I_{\max}
+=
+G
+\cdot
+\texttt{MAX\_INITIAL\_STAMINA\_SCALE}
+\]
+
+Son initial stamina:
+
+\[
+I
+=
+\operatorname{round}
+\left(
+\operatorname{clamp}
+\left(
+I_{\text{sample}},
+I_{\min},
+I_{\max}
+\right)
+\right)
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Difficulty arttikca ortalama initial stamina artar.
+  \item Random sapma seed'e baglidir.
+  \item Ayni seed ayni initial stamina degerini uretir.
+  \item Bu deger state proposal degiskeni degildir; sadece initial state generation sirasinda secilir.
+\end{itemize}
+
+\section{Terminal Breakdown Alanlari}
+
+\begin{tabular}{|l|p{0.66\linewidth}|}
+\hline
+Terminal alani & Formuldeki karsiligi \\
+\hline
+\texttt{main\_route\_difficulty} & $D_{\text{main}}$ \\
+\hline
+\texttt{main\_route\_success\_rate} & $\bar{R}$ \\
+\hline
+\texttt{main\_route\_term} & $E_D$ \\
+\hline
+\texttt{segment\_success\_std} & $\sigma_{\text{seg}}$ \\
+\hline
+\texttt{segment\_balance\_score} & $B_{\text{score}}$ \\
+\hline
+\texttt{segment\_balance\_term} & $E_B$ \\
+\hline
+\texttt{dead\_segment\_ratio} & $H_{\text{ratio}}$ \\
+\hline
+\texttt{dead\_segment\_term} & $E_H$ \\
+\hline
+\texttt{target\_weighted\_final\_stamina} & $T_F$ \\
+\hline
+\texttt{weighted\_final\_stamina} & $\bar{S}$ \\
+\hline
+\texttt{final\_stamina\_score} & $F_{\text{score}}$ \\
+\hline
+\texttt{final\_stamina\_term} & $E_F$ \\
+\hline
+\texttt{spacing\_target} & $X^\star$ \\
+\hline
+\texttt{spacing\_actual} & $X_{\text{actual}}$ \\
+\hline
+\texttt{spacing\_score} & $X_{\text{score}}$ \\
+\hline
+\texttt{spacing\_term} & $E_X$ \\
+\hline
+\texttt{total} & $E_{\text{agent}}$ \\
+\hline
+\end{tabular}
+
+\end{document}
