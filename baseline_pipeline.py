@@ -247,6 +247,13 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 f"spacing_actual={breakdown.spacing_actual} "
                 f"spacing_score={breakdown.spacing_score} "
                 f"spacing_term={breakdown.spacing_term} "
+                f"total={breakdown.total_energy}\n"
+                "terms: "
+                f"main_route={breakdown.agent_difficulty_term} "
+                f"segment_balance={breakdown.segment_balance_term} "
+                f"dead_segment={breakdown.dead_segment_term} "
+                f"final_stamina={breakdown.remaining_stamina_term} "
+                f"spacing={breakdown.spacing_term} "
                 f"total={breakdown.total_energy}"
             )
 
