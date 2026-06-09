@@ -17,6 +17,39 @@ Her mode şu alanları belirler:
 - başlangıçta hangi item’lar var
 - proposal hamle tipleri
 
+`stamina_only` modda `initial_stamina = None` ise stamina elle verilmez; grid boyutu ve hedef difficulty üzerinden otomatik hesaplanır. Bu değer initial state oluşturulurken bir kez seçilir ve MCMC state proposal'ları arasında değişmez.
+
+Otomatik initial stamina formülü:
+
+```text
+grid_scale =
+  sqrt(GRID_WIDTH * GRID_HEIGHT)
+
+mean_initial_stamina =
+  grid_scale
+  * (
+      INITIAL_STAMINA_BASE_SCALE
+      + INITIAL_STAMINA_DIFFICULTY_SCALE * TARGET_AGENT_DIFFICULTY
+    )
+
+std_initial_stamina =
+  grid_scale * INITIAL_STAMINA_NOISE_STD_SCALE
+
+sampled_initial_stamina =
+  Normal(mean_initial_stamina, std_initial_stamina)
+
+initial_stamina =
+  round(
+    clamp(
+      sampled_initial_stamina,
+      grid_scale * MIN_INITIAL_STAMINA_SCALE,
+      grid_scale * MAX_INITIAL_STAMINA_SCALE
+    )
+  )
+```
+
+Bu random sapma global seed'e bağlıdır. Yani aynı seed ile aynı initial stamina seçilir. Difficulty arttıkça ortalama initial stamina artar; amaç yüksek difficulty'de sadece stamina kıtlığı değil, daha uzun ve karmaşık rotalara alan açmaktır.
+
 ## Başlangıç State Üretimi
 
 ### `door_only`
@@ -133,4 +166,3 @@ Pipeline şu bilgileri yazar:
 - best state özeti
 
 `viz_maze.py` kullanıldığında da artık final ve best summary ayrıca terminale yazdırılır.
-

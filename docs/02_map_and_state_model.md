@@ -83,6 +83,8 @@ Bu modda state şu semantiğe sahiptir:
 - `items`: key ve stamina item’ları
 - `locked_door`: kapının başlangıçta kilitli olup olmadığını söyler
 
+`initial_stamina` MCMC proposal'ları sırasında değişmez. `stamina_only` config'inde `initial_stamina = None` kullanılırsa değer initial state üretiminde grid boyutu, `TARGET_AGENT_DIFFICULTY` ve seed'e bağlı normal sapma ile otomatik hesaplanır.
+
 Burada önemli tasarım kararı şudur:
 - `locked_door` proposal sırasında değişmez
 - bu değer başta config ile verilir
@@ -124,4 +126,3 @@ Kapı aktif olma koşulu:
 - ya da anahtar alınmış olabilir
 
 Bu karar özellikle HC3 solver ve solution overlay tarafını doğrudan etkiler.
-

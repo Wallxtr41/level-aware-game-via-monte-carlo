@@ -41,14 +41,19 @@ GRID_HEIGHT = 15
 START_POS = (1, 1)
 TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
-TARGET_AGENT_DIFFICULTY = 0.9
+TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 20.0
 SEGMENT_BALANCE_WEIGHT = 15.0
 DEAD_SEGMENT_WEIGHT = 0
 FINAL_STAMINA_WEIGHT = 10.0
 FINAL_STAMINA_TARGET_FACTOR = 0.8
 SPACING_WEIGHT = 10.0
-SPACING_TARGET_SCALE = 1.5
+SPACING_TARGET_SCALE = 3
+INITIAL_STAMINA_BASE_SCALE = 1.5
+INITIAL_STAMINA_DIFFICULTY_SCALE = 2
+INITIAL_STAMINA_NOISE_STD_SCALE = 0.2
+MIN_INITIAL_STAMINA_SCALE = 1.0
+MAX_INITIAL_STAMINA_SCALE = 4.0
 AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
@@ -92,7 +97,7 @@ STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
 class ModeConfig:
     name: str
     uses_stamina_solver: bool
-    initial_stamina: int
+    initial_stamina: int | None
     locked_door: bool
     item_kinds: tuple[str, ...]
     proposal_move_types: tuple[str, ...]
@@ -110,7 +115,7 @@ MODE_CONFIGS = {
     "stamina_only": ModeConfig(
         name="stamina_only",
         uses_stamina_solver=True,
-        initial_stamina=  50,#TARGET_PATH_LENGTH + TARGET_FINAL_STAMINA - 2* 6,  # Start with enough stamina to reach the door, then optimize from there.
+        initial_stamina=None,
         locked_door=True,
         item_kinds=("stamina", "stamina","key",), #"stamina", "stamina", 
         proposal_move_types=("topology", "item_move", "door_move"),
@@ -139,6 +144,46 @@ class StepStats:
 
 def get_mode_config() -> ModeConfig:
     return MODE_CONFIGS[GAME_MODE]
+
+
+def resolve_initial_stamina(mode_config: ModeConfig) -> int:
+    if mode_config.initial_stamina is not None:
+        return mode_config.initial_stamina
+
+    if not mode_config.uses_stamina_solver:
+        return 0
+
+    return calculate_auto_initial_stamina(
+        grid_width=GRID_WIDTH,
+        grid_height=GRID_HEIGHT,
+        target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
+        rng=random,
+    )
+
+
+def calculate_auto_initial_stamina(
+    *,
+    grid_width: int,
+    grid_height: int,
+    target_agent_difficulty: float,
+    rng,
+) -> int:
+    grid_scale = math.sqrt(max(1, grid_width * grid_height))
+    difficulty = min(1.0, max(0.0, target_agent_difficulty))
+    mean_stamina = grid_scale * (
+        INITIAL_STAMINA_BASE_SCALE
+        + INITIAL_STAMINA_DIFFICULTY_SCALE * difficulty
+    )
+    std_stamina = grid_scale * INITIAL_STAMINA_NOISE_STD_SCALE
+    sampled_stamina = (
+        rng.gauss(mean_stamina, std_stamina)
+        if std_stamina > 0
+        else mean_stamina
+    )
+    min_stamina = grid_scale * MIN_INITIAL_STAMINA_SCALE
+    max_stamina = grid_scale * MAX_INITIAL_STAMINA_SCALE
+    clamped_stamina = min(max_stamina, max(min_stamina, sampled_stamina))
+    return max(1, round(clamped_stamina))
 
 
 def get_energy_function() -> EnergyFunction:
@@ -611,10 +656,11 @@ def is_state_valid(state: BaselineState) -> bool:
 
 def create_initial_state() -> BaselineState:
     mode_config = get_mode_config()
+    initial_stamina = resolve_initial_stamina(mode_config)
 
     for _ in range(MAX_INITIAL_STATE_ATTEMPTS):
         grid = generate_maze_map(GRID_WIDTH, GRID_HEIGHT)
-        max_path_length = mode_config.initial_stamina + sum(
+        max_path_length = initial_stamina + sum(
             get_default_item_value(item_kind)
             for item_kind in mode_config.item_kinds
             if item_kind == "stamina"
@@ -633,7 +679,7 @@ def create_initial_state() -> BaselineState:
 
             items = construct_stamina_mode_items(
                 path=path,
-                initial_stamina=mode_config.initial_stamina,
+                initial_stamina=initial_stamina,
                 item_kinds=mode_config.item_kinds,
             )
 
@@ -645,7 +691,7 @@ def create_initial_state() -> BaselineState:
                 start=START_POS,
                 door=door,
                 items=items,
-                initial_stamina=mode_config.initial_stamina,
+                initial_stamina=initial_stamina,
                 locked_door=mode_config.locked_door,
             )
 
@@ -665,7 +711,7 @@ def create_initial_state() -> BaselineState:
                 start=START_POS,
                 door=door,
                 items=items,
-                initial_stamina=mode_config.initial_stamina,
+                initial_stamina=initial_stamina,
                 locked_door=mode_config.locked_door,
             )
 
