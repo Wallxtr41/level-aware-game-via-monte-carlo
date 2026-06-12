@@ -1,5 +1,4 @@
 from collections import deque
-from pathlib import Path
 import random
 import sys
 
@@ -8,6 +7,7 @@ import pygame
 import baseline_pipeline as bp
 from utils.energy_functions import stamina_aware_baseline_energy_breakdown
 from utils.map_analysis import is_walkable, iter_neighbors
+from utils.resource_paths import resource_path
 
 MODE = "stamina_only"  # door_only or stamina_only
 DISPLAY_STATE = "best"  # final or best
@@ -30,8 +30,7 @@ OVERLAY_COLORS = (
     (241, 90, 36),
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-TILES_DIR = BASE_DIR / "tiles"
+TILES_DIR = resource_path("tiles")
 ROAD_TILE_PATH = TILES_DIR / "default_road" / "road.png"
 
 

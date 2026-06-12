@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from pathlib import Path
 import random
 import sys
 
@@ -16,6 +15,7 @@ import baseline_pipeline as bp
 from utils import game_config
 from utils.energy_functions import stamina_aware_baseline_energy_breakdown
 from utils.map_analysis import is_walkable, iter_neighbors
+from utils.resource_paths import resource_path
 
 # ── Ayarlar ─────────────────────────────────────────────────────────────────────
 TILE_SIZE = 16
@@ -29,8 +29,7 @@ FOG_RADIUS = game_config.PLAYER_VISION_RADIUS
 MCMC_STEPS = 500
 REPLAY_FRAMES_PER_STEP = 6   # replay hizi: her N frame'de 1 adim
 
-BASE_DIR = Path(__file__).resolve().parent
-TILES_DIR = BASE_DIR / "tiles"
+TILES_DIR = resource_path("tiles")
 ROAD_TILE_PATH = TILES_DIR / "default_road" / "road.png"
 
 TILE_PATHS = {
