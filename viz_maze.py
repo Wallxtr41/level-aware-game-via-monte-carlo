@@ -104,8 +104,11 @@ def find_semantic_blocked_path(
         if item.position not in collected_item_positions
     }
 
-    if door_is_active:
+    if state.door not in {source_position, target_position}:
         semantic_positions.add(state.door)
+
+    if target_position == state.door and not door_is_active:
+        return []
 
     semantic_positions.discard(source_position)
     semantic_positions.discard(target_position)

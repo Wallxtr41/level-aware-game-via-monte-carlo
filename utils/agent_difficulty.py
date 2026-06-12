@@ -6,6 +6,7 @@ import math
 import random
 from typing import Iterable
 
+from utils import game_config
 from utils.hard_constraints import StaminaOnlyHC3GraphCache
 from utils.hard_constraints.hc3_stamina_only_solver import (
     StaminaNode,
@@ -15,7 +16,6 @@ from utils.hard_constraints.hc3_stamina_only_solver import (
     build_stamina_only_hc3_graph,
     compute_reachable_edges_for_state,
 )
-from utils.game_config import PLAYER_VISION_RADIUS
 from utils.map_analysis import is_walkable, iter_neighbors
 from utils.map_entities import Position
 
@@ -527,7 +527,7 @@ def _choose_next_position(
         current_position=current_position,
         target=target,
         blocked_positions=blocked_positions,
-        vision_radius=PLAYER_VISION_RADIUS,
+        vision_radius=game_config.PLAYER_VISION_RADIUS,
     )
 
     if visible_target_step in valid_neighbors:
@@ -829,6 +829,7 @@ def _difficulty_cache_key(
         tuple((item.kind, item.position, item.value) for item in problem.items),
         problem.initial_stamina,
         problem.locked_door,
+        game_config.PLAYER_VISION_RADIUS,
         config,
     )
 

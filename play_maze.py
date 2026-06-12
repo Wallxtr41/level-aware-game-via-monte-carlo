@@ -13,8 +13,8 @@ import sys
 import pygame
 
 import baseline_pipeline as bp
+from utils import game_config
 from utils.energy_functions import stamina_aware_baseline_energy_breakdown
-from utils.game_config import PLAYER_VISION_RADIUS
 from utils.map_analysis import is_walkable, iter_neighbors
 
 # ── Ayarlar ─────────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ ITEM_SIZE = 12
 ITEM_PIXELS = ITEM_SIZE * SCALE
 
 HUD_HEIGHT = 72
-FOG_RADIUS = PLAYER_VISION_RADIUS
+FOG_RADIUS = game_config.PLAYER_VISION_RADIUS
 MCMC_STEPS = 500
 REPLAY_FRAMES_PER_STEP = 6   # replay hizi: her N frame'de 1 adim
 
@@ -143,8 +143,12 @@ def find_semantic_blocked_path(
         for item in state.items
         if item.position not in collected_item_positions
     }
-    if door_is_active:
+    if state.door not in {source_pos, target_pos}:
         semantic_positions.add(state.door)
+
+    if target_pos == state.door and not door_is_active:
+        return []
+
     semantic_positions.discard(source_pos)
     semantic_positions.discard(target_pos)
 
@@ -275,6 +279,9 @@ def try_move(game, dr, dc):
     target = (nr, nc)
     door = game.mc_state.door
 
+    if target == door and not (game.door_open or game.has_key):
+        return None
+
     new_stamina = game.stamina - 1
     new_has_key = game.has_key
     new_door_open = game.door_open
@@ -292,8 +299,7 @@ def try_move(game, dr, dc):
             elif item.kind == "key":
                 new_has_key = True
 
-    # Kapiya basmak: anahtar varsa kapi acilir ve kazanilir;
-    # anahtar yoksa sadece uzerinden gecer, engellenmez.
+    # Kapiya basmak: kapali kapi anahtar yoksa yukarida bloklanir.
     if target == door:
         if not new_door_open and new_has_key:
             new_door_open = True

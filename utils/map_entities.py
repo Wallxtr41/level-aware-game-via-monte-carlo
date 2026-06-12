@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import random
 from typing import Literal, Sequence
 
+from utils import game_config
 from utils.map_analysis import choose_farthest_reachable_cell
 from utils.maze_generation import EXTRA_CONNECTION_CHANCE, generate_maze_map
 
@@ -46,6 +47,9 @@ def choose_door_position(grid: Grid, start: Position = START_POS) -> Position:
 
 
 def get_default_item_value(item_kind: ItemKind) -> int:
+    if item_kind == "stamina":
+        return game_config.STAMINA_ITEM_VALUE
+
     return DEFAULT_ITEM_VALUES[item_kind]
 
 

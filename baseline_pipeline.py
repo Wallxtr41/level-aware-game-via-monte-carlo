@@ -5,6 +5,7 @@ import math
 import random
 from typing import Callable
 
+from utils import game_config
 from utils.energy_functions import (
     AgentDifficultyConfig,
     make_path_length_energy,
@@ -42,12 +43,12 @@ from utils.maze_generation import generate_maze_map
 
 RANDOM_SEED = 42 #5
 
-GRID_WIDTH = 15
-GRID_HEIGHT = 15
+GRID_WIDTH = game_config.GRID_WIDTH
+GRID_HEIGHT = game_config.GRID_HEIGHT
 START_POS = (1, 1)
 TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
-TARGET_AGENT_DIFFICULTY = 0.5
+TARGET_AGENT_DIFFICULTY = game_config.TARGET_AGENT_DIFFICULTY
 AGENT_DIFFICULTY_WEIGHT = 30.0
 SEGMENT_TARGET_WEIGHT = 15.0
 SEGMENT_BALANCE_WEIGHT = 0
@@ -72,6 +73,8 @@ INITIAL_ITEM_CANDIDATE_LIMIT = 8
 INITIAL_VALID_CANDIDATE_LIMIT = 120
 INITIAL_EARLY_STOP_ENERGY = 1.0
 INITIAL_ITEM_MIN_START_DISTANCE_SCALE = 0.25
+DOOR_REQUIRES_KEY = game_config.DOOR_REQUIRES_KEY
+STAMINA_ITEM_COUNT = game_config.STAMINA_ITEM_COUNT
 GAME_MODE = "stamina_only"  # "door_only" or "stamina_only"
 STAMINA_ENERGY_MODEL = "agent_difficulty"  # "baseline" or "agent_difficulty"
 
@@ -133,11 +136,83 @@ MODE_CONFIGS = {
         name="stamina_only",
         uses_stamina_solver=True,
         initial_stamina=None,
-        locked_door=True,
-        item_kinds=("stamina", "stamina","key",), #"stamina", "stamina", 
+        locked_door=DOOR_REQUIRES_KEY,
+        item_kinds=game_config.build_stamina_item_kinds(),
         proposal_move_types=("topology", "item_move", "door_move"),
     ),
 }
+
+
+def rebuild_runtime_config() -> None:
+    global AGENT_DIFFICULTY_CONFIG
+    global STAMINA_ONLY_ENERGY_FUNCTION
+    global STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION
+    global MODE_CONFIGS
+
+    AGENT_DIFFICULTY_CONFIG = AgentDifficultyConfig(
+        agents_per_segment=AGENTS_PER_SEGMENT,
+        random_seed=AGENT_DIFFICULTY_SEED,
+    )
+    STAMINA_ONLY_ENERGY_FUNCTION = make_stamina_aware_baseline_energy(
+        target_path_length=TARGET_PATH_LENGTH,
+        target_remaining_stamina=TARGET_FINAL_STAMINA,
+    )
+    STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
+        target_agent_difficulty=TARGET_AGENT_DIFFICULTY,
+        difficulty_weight=AGENT_DIFFICULTY_WEIGHT,
+        segment_target_weight=SEGMENT_TARGET_WEIGHT,
+        segment_balance_weight=SEGMENT_BALANCE_WEIGHT,
+        dead_segment_weight=DEAD_SEGMENT_WEIGHT,
+        stamina_usage_weight=STAMINA_USAGE_WEIGHT,
+        target_stamina_usage_rate=TARGET_STAMINA_USAGE_RATE,
+        final_stamina_weight=FINAL_STAMINA_WEIGHT,
+        final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
+        spacing_weight=SPACING_WEIGHT,
+        spacing_target_scale=SPACING_TARGET_SCALE,
+        agent_config=AGENT_DIFFICULTY_CONFIG,
+    )
+    MODE_CONFIGS = {
+        "door_only": ModeConfig(
+            name="door_only",
+            uses_stamina_solver=False,
+            initial_stamina=0,
+            locked_door=False,
+            item_kinds=(),
+            proposal_move_types=("topology", "door_move"),
+        ),
+        "stamina_only": ModeConfig(
+            name="stamina_only",
+            uses_stamina_solver=True,
+            initial_stamina=None,
+            locked_door=DOOR_REQUIRES_KEY,
+            item_kinds=game_config.build_stamina_item_kinds(),
+            proposal_move_types=("topology", "item_move", "door_move"),
+        ),
+    }
+    HC3_CACHE.graphs.clear()
+
+
+def apply_difficulty_stamina_config(
+    config: game_config.DifficultyStaminaConfig,
+) -> game_config.DifficultyStaminaConfig:
+    global GRID_WIDTH
+    global GRID_HEIGHT
+    global TARGET_AGENT_DIFFICULTY
+    global DOOR_REQUIRES_KEY
+    global STAMINA_ITEM_COUNT
+    global GAME_MODE
+    global STAMINA_ENERGY_MODEL
+
+    config = game_config.apply_difficulty_stamina_config(config)
+    GRID_WIDTH = config.grid_width
+    GRID_HEIGHT = config.grid_height
+    TARGET_AGENT_DIFFICULTY = config.target_agent_difficulty
+    DOOR_REQUIRES_KEY = config.door_requires_key
+    STAMINA_ITEM_COUNT = config.stamina_item_count
+    GAME_MODE = "stamina_only"
+    STAMINA_ENERGY_MODEL = "agent_difficulty"
+    rebuild_runtime_config()
+    return config
 
 
 @dataclass

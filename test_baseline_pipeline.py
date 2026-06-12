@@ -4,9 +4,58 @@ import random
 import unittest
 
 import baseline_pipeline as bp
+from utils import game_config
+from utils.map_entities import get_default_item_value
 
 
 class InitialStaminaFormulaTests(unittest.TestCase):
+    def test_difficulty_stamina_config_is_clamped(self) -> None:
+        config = game_config.clamp_difficulty_stamina_config(
+            game_config.DifficultyStaminaConfig(
+                target_agent_difficulty=2.0,
+                player_vision_radius=99,
+                grid_width=10,
+                grid_height=200,
+                door_requires_key=True,
+                stamina_item_count=10,
+                stamina_item_value=999,
+            )
+        )
+
+        self.assertEqual(config.target_agent_difficulty, 1.0)
+        self.assertEqual(config.player_vision_radius, game_config.MAX_PLAYER_VISION_RADIUS)
+        self.assertEqual(config.grid_width, 11)
+        self.assertEqual(config.grid_height, 25)
+        self.assertEqual(config.stamina_item_count, 3)
+        self.assertEqual(config.stamina_item_value, game_config.MAX_STAMINA_ITEM_VALUE)
+
+    def test_baseline_applies_difficulty_stamina_config(self) -> None:
+        original_config = game_config.get_difficulty_stamina_config()
+
+        try:
+            applied_config = bp.apply_difficulty_stamina_config(
+                game_config.DifficultyStaminaConfig(
+                    target_agent_difficulty=0.7,
+                    player_vision_radius=3,
+                    grid_width=12,
+                    grid_height=14,
+                    door_requires_key=False,
+                    stamina_item_count=3,
+                    stamina_item_value=22,
+                )
+            )
+
+            self.assertEqual(applied_config.grid_width, 13)
+            self.assertEqual(applied_config.grid_height, 15)
+            self.assertEqual(bp.GRID_WIDTH, 13)
+            self.assertEqual(bp.GRID_HEIGHT, 15)
+            self.assertEqual(bp.TARGET_AGENT_DIFFICULTY, 0.7)
+            self.assertEqual(bp.get_mode_config().item_kinds, ("stamina", "stamina", "stamina"))
+            self.assertFalse(bp.get_mode_config().locked_door)
+            self.assertEqual(get_default_item_value("stamina"), 22)
+        finally:
+            bp.apply_difficulty_stamina_config(original_config)
+
     def test_auto_initial_stamina_increases_with_difficulty_without_noise(self) -> None:
         original_noise_scale = bp.INITIAL_STAMINA_NOISE_STD_SCALE
 
