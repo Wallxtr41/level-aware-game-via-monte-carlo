@@ -15,6 +15,7 @@ from utils.hard_constraints.hc3_stamina_only_solver import (
     build_stamina_only_hc3_graph,
     compute_reachable_edges_for_state,
 )
+from utils.game_config import PLAYER_VISION_RADIUS
 from utils.map_analysis import is_walkable, iter_neighbors
 from utils.map_entities import Position
 
@@ -122,7 +123,6 @@ class AgentDifficultySummary:
 
 
 _DIFFICULTY_CACHE: dict[tuple[object, ...], AgentDifficultySummary] = {}
-TARGET_VISION_RADIUS = 2
 
 
 def estimate_agent_difficulty(
@@ -504,7 +504,7 @@ def _choose_next_position(
         current_position=current_position,
         target=target,
         blocked_positions=blocked_positions,
-        vision_radius=TARGET_VISION_RADIUS,
+        vision_radius=PLAYER_VISION_RADIUS,
     )
 
     if visible_target_step in valid_neighbors:

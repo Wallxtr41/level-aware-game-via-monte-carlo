@@ -14,6 +14,7 @@ import pygame
 
 import baseline_pipeline as bp
 from utils.energy_functions import stamina_aware_baseline_energy_breakdown
+from utils.game_config import PLAYER_VISION_RADIUS
 from utils.map_analysis import is_walkable, iter_neighbors
 
 # ── Ayarlar ─────────────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ ITEM_SIZE = 12
 ITEM_PIXELS = ITEM_SIZE * SCALE
 
 HUD_HEIGHT = 72
-FOG_RADIUS = 1
+FOG_RADIUS = PLAYER_VISION_RADIUS
 MCMC_STEPS = 500
 REPLAY_FRAMES_PER_STEP = 6   # replay hizi: her N frame'de 1 adim
 

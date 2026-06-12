@@ -181,7 +181,7 @@ Gecerli komsu:
 
 Secim sirasi:
 
-1. Target `TARGET_VISION_RADIUS = 2` icinde gorulebiliyorsa ve bu radius icinde target'a giden acik bir yol varsa dogrudan target'a giden adimi secer.
+1. Target ortak `PLAYER_VISION_RADIUS = 2` icinde gorulebiliyorsa ve bu radius icinde target'a giden acik bir yol varsa dogrudan target'a giden adimi secer.
 2. Daha once ziyaret edilmemis komsular varsa rastgele birini secer.
 3. Tum secenekler daha once ziyaret edilmisse, geldigi hucre disindaki seceneklerden rastgele secer.
 4. Sadece geldigi hucreye donebiliyorsa oraya doner ve `forced_backtracks += 1`.
