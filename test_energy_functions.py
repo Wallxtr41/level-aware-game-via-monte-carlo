@@ -42,8 +42,10 @@ class EnergyFunctionTests(unittest.TestCase):
             state=state,
             target_agent_difficulty=0.75,
             difficulty_weight=0.0,
+            segment_target_weight=0.0,
             segment_balance_weight=0.0,
             dead_segment_weight=0.0,
+            stamina_usage_weight=0.0,
             final_stamina_weight=10.0,
             final_stamina_target_factor=0.8,
             spacing_weight=0.0,
@@ -74,8 +76,10 @@ class EnergyFunctionTests(unittest.TestCase):
             state=state,
             target_agent_difficulty=0.5,
             difficulty_weight=0.0,
+            segment_target_weight=0.0,
             segment_balance_weight=0.0,
             dead_segment_weight=0.0,
+            stamina_usage_weight=0.0,
             final_stamina_weight=0.0,
             spacing_weight=10.0,
             spacing_target_scale=1.5,
@@ -90,6 +94,139 @@ class EnergyFunctionTests(unittest.TestCase):
         self.assertAlmostEqual(breakdown.spacing_target, expected_target)
         self.assertAlmostEqual(breakdown.spacing_score, expected_score)
         self.assertAlmostEqual(breakdown.spacing_term, 10.0 * expected_score)
+
+    def test_segment_target_term_penalizes_segments_far_from_target_success(self) -> None:
+        state = DummyState(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(1, 5),
+            items=(),
+            initial_stamina=10,
+            locked_door=False,
+        )
+
+        breakdown = stamina_agent_difficulty_energy_breakdown(
+            state=state,
+            target_agent_difficulty=0.75,
+            difficulty_weight=0.0,
+            segment_target_weight=4.0,
+            segment_balance_weight=0.0,
+            dead_segment_weight=0.0,
+            stamina_usage_weight=0.0,
+            final_stamina_weight=0.0,
+            spacing_weight=0.0,
+            agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=3),
+        )
+
+        self.assertAlmostEqual(breakdown.segment_success_target, 0.25)
+        self.assertAlmostEqual(breakdown.segment_target_score, 0.75)
+        self.assertAlmostEqual(breakdown.segment_target_term, 3.0)
+        self.assertAlmostEqual(breakdown.total_energy, 3.0)
+
+    def test_stamina_usage_term_penalizes_success_that_skips_stamina_items(self) -> None:
+        state = DummyState(
+            grid=grid_from_rows(
+                "#######",
+                "#.....#",
+                "#.###.#",
+                "#.....#",
+                "#######",
+            ),
+            start=(1, 1),
+            door=(1, 5),
+            items=(ItemPlacement(kind="stamina", position=(3, 1), value=4),),
+            initial_stamina=20,
+            locked_door=False,
+        )
+
+        breakdown = stamina_agent_difficulty_energy_breakdown(
+            state=state,
+            target_agent_difficulty=0.5,
+            difficulty_weight=0.0,
+            segment_target_weight=0.0,
+            segment_balance_weight=0.0,
+            dead_segment_weight=0.0,
+            stamina_usage_weight=8.0,
+            target_stamina_usage_rate=1.0,
+            final_stamina_weight=0.0,
+            spacing_weight=0.0,
+            agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=4),
+        )
+
+        self.assertAlmostEqual(breakdown.stamina_usage_target, 1.0)
+        self.assertGreater(breakdown.stamina_usage_actual, 0.0)
+        self.assertLess(breakdown.stamina_usage_actual, 1.0)
+        self.assertAlmostEqual(
+            breakdown.stamina_usage_score,
+            breakdown.stamina_usage_target - breakdown.stamina_usage_actual,
+        )
+        self.assertAlmostEqual(
+            breakdown.stamina_usage_term,
+            8.0 * breakdown.stamina_usage_score,
+        )
+        self.assertAlmostEqual(breakdown.total_energy, breakdown.stamina_usage_term)
+
+    def test_stamina_usage_term_scales_by_total_stamina_item_count(self) -> None:
+        grid = grid_from_rows(
+            "#######",
+            "#.....#",
+            "#.###.#",
+            "#.....#",
+            "#######",
+        )
+        one_stamina_state = DummyState(
+            grid=grid,
+            start=(1, 1),
+            door=(1, 5),
+            items=(ItemPlacement(kind="stamina", position=(3, 1), value=4),),
+            initial_stamina=6,
+            locked_door=False,
+        )
+        two_stamina_state = DummyState(
+            grid=grid,
+            start=(1, 1),
+            door=(1, 5),
+            items=(
+                ItemPlacement(kind="stamina", position=(3, 1), value=4),
+                ItemPlacement(kind="stamina", position=(3, 5), value=4),
+            ),
+            initial_stamina=6,
+            locked_door=False,
+        )
+
+        common_kwargs = dict(
+            target_agent_difficulty=0.5,
+            difficulty_weight=0.0,
+            segment_target_weight=0.0,
+            segment_balance_weight=0.0,
+            dead_segment_weight=0.0,
+            stamina_usage_weight=8.0,
+            target_stamina_usage_rate=1.0,
+            final_stamina_weight=0.0,
+            spacing_weight=0.0,
+            agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=4),
+        )
+        one_stamina_breakdown = stamina_agent_difficulty_energy_breakdown(
+            state=one_stamina_state,
+            **common_kwargs,
+        )
+        two_stamina_breakdown = stamina_agent_difficulty_energy_breakdown(
+            state=two_stamina_state,
+            **common_kwargs,
+        )
+
+        self.assertLess(
+            two_stamina_breakdown.stamina_usage_actual,
+            one_stamina_breakdown.stamina_usage_actual,
+        )
+        self.assertGreater(
+            two_stamina_breakdown.stamina_usage_term,
+            one_stamina_breakdown.stamina_usage_term,
+        )
 
 
 if __name__ == "__main__":

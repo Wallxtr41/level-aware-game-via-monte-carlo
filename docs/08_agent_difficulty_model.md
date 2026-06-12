@@ -390,7 +390,31 @@ Yorum:
 
 ## Segment Balance
 
-Main route difficulty tek basina yeterli degildir. Ornek:
+Main route difficulty tek basina yeterli degildir. Ilk ek kontrol segment target alignment'dir.
+
+Route seviyesinde hedef basari orani:
+
+```text
+route_success_target = 1 - target_agent_difficulty
+```
+
+Bir plan `m` segmentten olusuyorsa her segment icin lokal hedef:
+
+```text
+segment_success_target = route_success_target ^ (1 / m)
+```
+
+Sonra o plandaki segment success rate'lerinin bu hedefe ortalama mutlak uzakligi hesaplanir:
+
+```text
+segment_target_score = average(abs(segment_success_rate - segment_success_target))
+```
+
+Bu terim sunu olcer:
+- segmentler hedef zorluk seviyesine yakin mi
+- tum segmentler cok kolay veya cok zor kalmis mi
+
+Ikinci kontrol std tabanli balance kontroludur. Ornek:
 
 ```text
 start -> key success = 1.0
@@ -411,6 +435,7 @@ Segment ayni source-target ciftinde birden fazla route icinde gecerse tek unique
 Yorum:
 - `segment_success_std` dusukse zorluk dengeli dagilmis demektir
 - `segment_success_std` yuksekse bazi segmentler cok kolay, bazilari cok zor demektir
+- `segment_target_score` dusukse segmentler sadece birbirine degil hedef difficulty'ye de yakindir
 
 ## Dead Segment Ratio
 
@@ -437,6 +462,44 @@ Buradaki `all_unique_segments` tum suffix route parcalarini kapsamaz. Sadece:
 dahil edilir.
 
 Bir segment exact cozulebilen bir route icinde simule edildiyse, agent success rate `0` olsa bile dead segment sayilmaz. Bu durumda segment balance listesine `0.0` olarak girer. Dead segment sadece exact semantic analizde ilk basarisiz segment olarak gelen segmenttir.
+
+## Stamina Usage Dependency
+
+Stamina item'larin oyunda anlamli olmasi icin exact-solvable planlarin ne kadarinin stamina topladigi ayrica olculur.
+
+```text
+stamina_usage_actual =
+  sum(plan_success_rate * collected_stamina_ratio_for_plan)
+  / sum(plan_success_rate)
+```
+
+Burada:
+
+```text
+collected_stamina_ratio_for_plan =
+  collected_stamina_item_count_for_plan
+  / total_stamina_item_count_on_map
+```
+
+Plan 4 stamina item olan bir haritada sadece 1 stamina topluyorsa bu plana ait usage katkisi `0.25` olur. Success-rate agirligi kullanildigi icin ajanlarin pratikte daha cok basardigi planlar daha fazla etki eder.
+
+Hedef deger:
+
+```text
+stamina_usage_target =
+  target_stamina_usage_rate if explicitly set
+  else target_agent_difficulty
+```
+
+Haritada stamina item yoksa hedef `0` kabul edilir.
+
+Enerji skoru:
+
+```text
+stamina_usage_score = abs(stamina_usage_target - stamina_usage_actual)
+```
+
+Bu terim direct `start -> key -> door` planlari cok baskin oldugunda ceza verir. Ayrica haritadaki toplam stamina sayisini da hesaba katar; 1/4 stamina toplamak ile 1/1 stamina toplamak ayni sayilmaz. Daha sert stamina kullanimi istenirse pipeline'da `TARGET_STAMINA_USAGE_RATE = 0.8` gibi sabit bir hedef secilebilir.
 
 ## Deterministic Randomness
 
@@ -495,8 +558,10 @@ Agent difficulty energy su formulu kullanir:
 ```text
 E =
   difficulty_weight * abs(main_route_difficulty - target_agent_difficulty)
+  + segment_target_weight * segment_target_score
   + segment_balance_weight * segment_balance_score
   + dead_segment_weight * dead_segment_ratio
+  + stamina_usage_weight * stamina_usage_score
   + final_stamina_weight * final_stamina_score
   + spacing_weight * spacing_score
 ```
@@ -505,7 +570,13 @@ Burada:
 
 ```text
 main_route_difficulty = 1 - main_route_success_rate
+route_success_target = 1 - target_agent_difficulty
+segment_success_target_for_plan = route_success_target ^ (1 / segment_count)
+segment_target_score = average(abs(segment_success_rate - segment_success_target_for_plan))
 segment_balance_score = min(1, 2 * segment_success_std)
+stamina_usage_target = target_stamina_usage_rate if set, else target_agent_difficulty
+stamina_usage_actual = sum(plan_success_rate * collected_stamina_ratio_for_plan) / sum(plan_success_rate)
+stamina_usage_score = abs(stamina_usage_target - stamina_usage_actual)
 target_final_stamina = final_stamina_target_factor * initial_stamina * (1 - target_agent_difficulty)
 weighted_final_stamina = sum(plan_success_rate * avg_final_stamina_for_plan) / sum(plan_success_rate)
 final_stamina_score = min(1, abs(target_final_stamina - weighted_final_stamina) / max(1, initial_stamina))
@@ -524,8 +595,11 @@ Pipeline parametreleri:
 STAMINA_ENERGY_MODEL = "agent_difficulty"
 TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 20.0
+SEGMENT_TARGET_WEIGHT = 15.0
 SEGMENT_BALANCE_WEIGHT = 10.0
 DEAD_SEGMENT_WEIGHT = 10.0
+STAMINA_USAGE_WEIGHT = 10.0
+TARGET_STAMINA_USAGE_RATE = None
 FINAL_STAMINA_WEIGHT = 10.0
 FINAL_STAMINA_TARGET_FACTOR = 0.8
 SPACING_WEIGHT = 10.0

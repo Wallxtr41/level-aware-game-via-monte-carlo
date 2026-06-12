@@ -42,9 +42,13 @@ $D^\star$ & Target agent difficulty. Kodda \texttt{TARGET\_AGENT\_DIFFICULTY}. A
 \hline
 $W_D$ & Difficulty term agirligi. Kodda \texttt{AGENT\_DIFFICULTY\_WEIGHT}. \\
 \hline
+$W_T$ & Segment target term agirligi. Kodda \texttt{SEGMENT\_TARGET\_WEIGHT}. \\
+\hline
 $W_B$ & Segment balance term agirligi. Kodda \texttt{SEGMENT\_BALANCE\_WEIGHT}. \\
 \hline
 $W_H$ & Dead segment term agirligi. Kodda \texttt{DEAD\_SEGMENT\_WEIGHT}. \\
+\hline
+$W_U$ & Stamina usage term agirligi. Kodda \texttt{STAMINA\_USAGE\_WEIGHT}. \\
 \hline
 $W_F$ & Final stamina term agirligi. Kodda \texttt{FINAL\_STAMINA\_WEIGHT}. \\
 \hline
@@ -140,9 +144,13 @@ E_{\text{agent}}(s)
 =
 E_D(s)
 +
+E_T(s)
++
 E_B(s)
 +
 E_H(s)
++
+E_U(s)
 +
 E_F(s)
 +
@@ -153,8 +161,10 @@ Terimler:
 
 \begin{itemize}
   \item $E_D$: main route difficulty hedefinden sapma.
+  \item $E_T$: segmentlerin hedef lokal success rate'ten sapmasi.
   \item $E_B$: segmentler arasi zorluk dengesizligi.
   \item $E_H$: exact dead segment orani.
+  \item $E_U$: basarili planlarin stamina item toplama orani hedefinden sapma.
   \item $E_F$: final stamina hedefinden sapma.
   \item $E_X$: start-key-door spacing hedefinden sapma.
 \end{itemize}
@@ -237,6 +247,56 @@ Yorum:
   \item $D_{\text{main}}$ hedefe yakin ise bu terim dusuk olur.
   \item Agentlar cok kolay geciyorsa $\bar{R}$ yuksek, $D_{\text{main}}$ dusuk olur.
   \item Agentlar zor geciyorsa $\bar{R}$ dusuk, $D_{\text{main}}$ yuksek olur.
+\end{itemize}
+
+\subsection{Segment Target Term}
+
+Main route hedefi once route success hedefi olarak yazilir:
+
+\[
+R^\star
+=
+1 - D^\star
+\]
+
+Plan $p_i$ toplam $m_i$ segmentten olusuyorsa, o plan icin lokal segment success hedefi:
+
+\[
+Q_i^\star
+=
+(R^\star)^{1/m_i}
+\]
+
+Segment target score:
+
+\[
+T_{\text{score}}
+=
+\frac{1}{M}
+\sum_{p_i \in \mathcal{P}_{\text{solv}}}
+\sum_{j=1}^{m_i}
+\left|
+q_{i,j} - Q_i^\star
+\right|
+\]
+
+Burada $M$ exact-solvable planlardaki toplam simulated segment occurrence sayisidir.
+Kodda segment yoksa skor $0$ kabul edilir ve skor $1$ degerinde saturate edilir.
+
+Segment target energy:
+
+\[
+E_T(s)
+=
+W_T T_{\text{score}}
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Bu terim segmentleri route hedefinden turetilen lokal basari oranina yaklastirir.
+  \item Eski std tabanli balance sadece segmentlerin birbirine benzerligini olcerken, bu terim segmentlerin hedef difficulty'ye uygun olup olmadigini da olcer.
+  \item Tum segmentler cok kolaysa veya cok zorsa bu terim ceza uretir.
 \end{itemize}
 
 \subsection{Segment Balance Term}
@@ -343,6 +403,90 @@ Yorum:
   \item Bu terim exact olarak hic calismayan semantic baglantilari cezalandirir.
   \item Dead route suffix'leri tekrar tekrar sayilmaz; unique dead segment sayilir.
   \item Eger \texttt{DEAD\_SEGMENT\_WEIGHT = 0} ise bu terim enerjiye etki etmez ama summary'de gorunmeye devam eder.
+\end{itemize}
+
+\subsection{Stamina Usage Term}
+
+Haritadaki toplam stamina item sayisi:
+
+\[
+N_{\text{stam}}
+=
+\#\text{stamina items on map}
+\]
+
+Plan $p_i$ icin toplanan stamina item sayisi:
+
+\[
+C_i
+=
+\#\text{stamina items collected by } p_i
+\]
+
+Plan seviyesinde stamina collection ratio:
+
+\[
+U_i
+=
+\begin{cases}
+0, & N_{\text{stam}} = 0 \\
+\frac{C_i}{N_{\text{stam}}}, & N_{\text{stam}} > 0
+\end{cases}
+\]
+
+Success-rate agirlikli stamina usage:
+
+\[
+\bar{U}
+=
+\frac{
+  \sum_{p_i \in \mathcal{P}_{\text{solv}}}
+  R_i U_i
+}{
+  \sum_{p_i \in \mathcal{P}_{\text{solv}}}
+  R_i
+}
+\]
+
+Kodda payda $0$ ise $\bar{U}=0$ kabul edilir.
+
+Target stamina usage:
+
+\[
+U^\star
+=
+\begin{cases}
+0, & \text{haritada stamina item yoksa} \\
+\texttt{TARGET\_STAMINA\_USAGE\_RATE}, & \text{explicit target verildiyse} \\
+D^\star, & \text{aksi halde}
+\end{cases}
+\]
+
+Stamina usage score:
+
+\[
+U_{\text{score}}
+=
+\left|
+U^\star - \bar{U}
+\right|
+\]
+
+Stamina usage energy:
+
+\[
+E_U(s)
+=
+W_U U_{\text{score}}
+\]
+
+Yorum:
+
+\begin{itemize}
+  \item Bu terim stamina item toplamadan biten direct planlar baskin oldugunda ceza uretir.
+  \item Haritadaki toplam stamina sayisini hesaba katar: 4 stamina item olan haritada 1 item toplamak $0.25$ usage demektir.
+  \item Success-rate agirligi kullanildigi icin ajanlarin pratikte daha cok basardigi planlar daha fazla etki eder.
+  \item Daha sert stamina zorunlulugu icin \texttt{TARGET\_STAMINA\_USAGE\_RATE = 0.8} gibi sabit hedef verilebilir.
 \end{itemize}
 
 \subsection{Final Stamina Term}
@@ -602,6 +746,12 @@ Terminal alani & Formuldeki karsiligi \\
 \hline
 \texttt{main\_route\_term} & $E_D$ \\
 \hline
+\texttt{segment\_success\_target} & average $Q_i^\star$ \\
+\hline
+\texttt{segment\_target\_score} & $T_{\text{score}}$ \\
+\hline
+\texttt{segment\_target\_term} & $E_T$ \\
+\hline
 \texttt{segment\_success\_std} & $\sigma_{\text{seg}}$ \\
 \hline
 \texttt{segment\_balance\_score} & $B_{\text{score}}$ \\
@@ -611,6 +761,14 @@ Terminal alani & Formuldeki karsiligi \\
 \texttt{dead\_segment\_ratio} & $H_{\text{ratio}}$ \\
 \hline
 \texttt{dead\_segment\_term} & $E_H$ \\
+\hline
+\texttt{stamina\_usage\_target} & $U^\star$ \\
+\hline
+\texttt{stamina\_usage\_actual} & $\bar{U}$ \\
+\hline
+\texttt{stamina\_usage\_score} & $U_{\text{score}}$ \\
+\hline
+\texttt{stamina\_usage\_term} & $E_U$ \\
 \hline
 \texttt{target\_weighted\_final\_stamina} & $T_F$ \\
 \hline

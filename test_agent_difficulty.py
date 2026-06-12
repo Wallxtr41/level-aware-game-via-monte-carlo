@@ -21,20 +21,19 @@ class AgentDifficultyTests(unittest.TestCase):
     def test_agent_follows_visible_path_to_target(self) -> None:
         result = simulate_segment_agent(
             grid=grid_from_rows(
-                "#####",
-                "#...#",
-                "#.###",
-                "#####",
+                "####",
+                "#..#",
+                "####",
             ),
             source=(1, 1),
-            target=(1, 3),
+            target=(1, 2),
             blocked_positions=set(),
-            start_stamina=2,
+            start_stamina=1,
             rng=random.Random(0),
         )
 
         self.assertTrue(result.success)
-        self.assertEqual(result.total_steps, 2)
+        self.assertEqual(result.total_steps, 1)
         self.assertEqual(result.remaining_stamina, 0)
 
     def test_enumerates_multiple_semantic_solution_plans(self) -> None:

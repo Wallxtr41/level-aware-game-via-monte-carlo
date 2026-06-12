@@ -121,16 +121,20 @@ Kisa notasyon:
 - `F`: `FINAL_STAMINA_TARGET_FACTOR`
 - `R_i`: exact cozulebilen plan `i` icin agent estimated success rate
 - `S_i`: exact cozulebilen plan `i` icin basarili ajanlarin ortalama final stamina degeri
+- `q_ij`: plan `i` icindeki segment `j` icin agent success rate
 - `std_segments`: unique simule edilmis segment success rate'lerinin standart sapmasi
 - `dead_ratio`: unique dead segment orani
+- `U`: success-rate agirlikli stamina-item toplama orani
 
 Toplam enerji:
 
 ```text
 E_total =
   E_difficulty
+  + E_segment_target
   + E_segment_balance
   + E_dead_segment
+  + E_stamina_usage
   + E_final_stamina
   + E_spacing
 ```
@@ -148,6 +152,25 @@ E_difficulty =
   AGENT_DIFFICULTY_WEIGHT
   * abs(D_main - D_target)
 ```
+
+Segment hedef terimi:
+
+```text
+route_success_target =
+  1 - D_target
+
+segment_success_target_i =
+  route_success_target ^ (1 / segment_count_i)
+
+segment_target_score =
+  average(abs(q_ij - segment_success_target_i))
+
+E_segment_target =
+  SEGMENT_TARGET_WEIGHT
+  * segment_target_score
+```
+
+Bu terim segmentlerin sadece birbirine benzemesini degil, route difficulty hedefinden turetilen lokal basari oranina yaklasmasini ister.
 
 Segment denge terimi:
 
@@ -170,6 +193,35 @@ E_dead_segment =
   DEAD_SEGMENT_WEIGHT
   * dead_ratio
 ```
+
+Stamina usage terimi:
+
+```text
+stamina_usage_target =
+  TARGET_STAMINA_USAGE_RATE
+  if TARGET_STAMINA_USAGE_RATE is not None
+  else D_target
+
+stamina_usage_actual =
+  sum(R_i * collected_stamina_ratio_i) / sum(R_i)
+
+stamina_usage_score =
+  abs(stamina_usage_target - stamina_usage_actual)
+
+E_stamina_usage =
+  STAMINA_USAGE_WEIGHT
+  * stamina_usage_score
+```
+
+Burada `collected_stamina_ratio_i`, exact-solvable plan `i` icin:
+
+```text
+collected_stamina_ratio_i =
+  collected_stamina_item_count_i
+  / total_stamina_item_count_on_map
+```
+
+Yani plan 4 stamina item olan bir haritada sadece 1 stamina topluyorsa usage katkisi `0.25` olur. Haritada stamina item yoksa hedef usage `0` olur ve bu terim impossible bir davranisi cezalandirmaz.
 
 Final stamina terimi:
 
@@ -230,8 +282,11 @@ E_spacing =
 `baseline_pipeline.py` icindeki ilgili parametreler:
 - `TARGET_AGENT_DIFFICULTY`
 - `AGENT_DIFFICULTY_WEIGHT`
+- `SEGMENT_TARGET_WEIGHT`
 - `SEGMENT_BALANCE_WEIGHT`
 - `DEAD_SEGMENT_WEIGHT`
+- `STAMINA_USAGE_WEIGHT`
+- `TARGET_STAMINA_USAGE_RATE`
 - `FINAL_STAMINA_WEIGHT`
 - `FINAL_STAMINA_TARGET_FACTOR`
 - `SPACING_WEIGHT`
@@ -285,19 +340,45 @@ D_main_route = 1 - average_success_rate_of_exact_solvable_routes
 
 Yani exact cozulebilen route'larin ortalama gecilme orani dusukse ana route zorlugu yuksek kabul edilir.
 
-Ek olarak unique segmentler uzerinden iki kalite cezasi hesaplanir:
+Ek olarak segment seviyesinde uc kalite cezasi hesaplanir:
 
 ```text
+route_success_target = 1 - TARGET_AGENT_DIFFICULTY
+segment_success_target_i = route_success_target ^ (1 / segment_count_i)
+segment_target_score = average(abs(segment_success_rate_ij - segment_success_target_i))
 segment_success_std = std(unique attempted segment success rates)
 segment_balance_score = min(1, 2 * segment_success_std)
 dead_segment_ratio = dead_unique_segments / all_unique_segments
 ```
 
 Bu ayrim sunu engeller:
+- tum segmentler cok kolaysa veya cok zorsa `segment_target_score` ceza verir
 - tek segment cok kolay, diger segment cok zor olunca toplam route success hedefe denk gelse bile `segment_success_std` ceza verir
 - cok fazla exact dead semantic baglanti varsa, ana route kolay olsa bile `dead_segment_ratio` ceza verir
 
 `segment_success_std` hesabina agent success rate `0` olan exact-gecilebilir segmentler de dahildir. `all_unique_segments`, route suffix'lerini sisme olacak sekilde saymaz. Sadece ajan tarafindan gercekten simule edilen segmentler ve exact dead planlarda ilk basarisiz semantic segment dahil edilir.
+
+Stamina usage terimi exact solvable planlarin haritadaki stamina item'larin ne kadarini topladigini olcer:
+
+```text
+stamina_usage_actual =
+  sum(plan_success_rate * collected_stamina_ratio_for_plan)
+  / sum(plan_success_rate)
+
+collected_stamina_ratio_for_plan =
+  collected_stamina_item_count_for_plan
+  / total_stamina_item_count_on_map
+
+stamina_usage_target =
+  TARGET_STAMINA_USAGE_RATE
+  if TARGET_STAMINA_USAGE_RATE is not None
+  else TARGET_AGENT_DIFFICULTY
+
+stamina_usage_score =
+  abs(stamina_usage_target - stamina_usage_actual)
+```
+
+Bu terim direct `start -> key -> door` gibi stamina toplamadan biten rotalar cok baskin oldugunda ceza uretir. Ayrica total stamina sayisini da hesaba katar: 4 stamina item olan haritada 1 item toplamak `0.25`, 2 item toplamak `0.5` usage demektir. Daha sert stamina zorunlulugu istenirse `TARGET_STAMINA_USAGE_RATE = 0.8` gibi sabit bir hedef verilebilir.
 
 Final stamina terimi exact solvable planlarin basarili agent sonuclarindan hesaplanir:
 
