@@ -82,9 +82,9 @@ class EnergyFunctionTests(unittest.TestCase):
             agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=2),
         )
 
-        expected_actual = (2 + 2 + 4) / 3
+        expected_actual = (2 + 2) / 2
         expected_target = 1.5 * math.sqrt(21) * 0.75
-        expected_score = abs(expected_target - expected_actual) / (2 * 1.5 * math.sqrt(21))
+        expected_score = (abs(expected_target - expected_actual) / max(1.0, expected_target)) ** 2
 
         self.assertAlmostEqual(breakdown.spacing_actual, expected_actual)
         self.assertAlmostEqual(breakdown.spacing_target, expected_target)

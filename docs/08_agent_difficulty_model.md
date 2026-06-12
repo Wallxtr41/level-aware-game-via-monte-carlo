@@ -510,8 +510,12 @@ target_final_stamina = final_stamina_target_factor * initial_stamina * (1 - targ
 weighted_final_stamina = sum(plan_success_rate * avg_final_stamina_for_plan) / sum(plan_success_rate)
 final_stamina_score = min(1, abs(target_final_stamina - weighted_final_stamina) / max(1, initial_stamina))
 grid_scale = sqrt(grid_width * grid_height)
+if key exists:
+  spacing_actual = average(shortest_path(start, key), shortest_path(key, door))
+else:
+  spacing_actual = shortest_path(start, door)
 spacing_target = spacing_target_scale * grid_scale * (0.5 + 0.5 * target_agent_difficulty)
-spacing_score = min(1, abs(spacing_target - spacing_actual) / (2 * spacing_target_scale * grid_scale))
+spacing_score = min(1, (abs(spacing_target - spacing_actual) / max(1, spacing_target))^2)
 ```
 
 Pipeline parametreleri:

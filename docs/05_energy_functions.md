@@ -202,8 +202,7 @@ Spacing terimi:
 spacing_actual =
   average(
     shortest_path(start, key),
-    shortest_path(key, door),
-    shortest_path(start, door)
+    shortest_path(key, door)
   )
 
 grid_scale =
@@ -217,8 +216,10 @@ spacing_target =
 spacing_score =
   min(
     1,
-    abs(spacing_target - spacing_actual)
-    / (2 * SPACING_TARGET_SCALE * grid_scale)
+    (
+      abs(spacing_target - spacing_actual)
+      / max(1, spacing_target)
+    )^2
   )
 
 E_spacing =
@@ -320,14 +321,14 @@ final_stamina_score =
 
 Bu normalizasyon final stamina terimini initial stamina scale'ine getirir. Burada `(1 - TARGET_AGENT_DIFFICULTY)` kullanilir; hedef zorluk arttikca beklenen final stamina azalir.
 
-Spacing terimi start, key ve door'un grid uzerindeki en kisa yol uzakliklarini kullanir:
+Spacing terimi start, key ve door'un grid uzerindeki en kisa yol uzakliklarini kullanir.
+Key varsa sadece iki kritik bacak ortalamaya girer:
 
 ```text
 spacing_actual =
   average(
     shortest_path(start, key),
-    shortest_path(key, door),
-    shortest_path(start, door)
+    shortest_path(key, door)
   )
 
 grid_scale = sqrt(grid_width * grid_height)
@@ -339,12 +340,16 @@ spacing_target =
 spacing_score =
   min(
     1,
-    abs(spacing_target - spacing_actual)
-    / (2 * SPACING_TARGET_SCALE * grid_scale)
+    (
+      abs(spacing_target - spacing_actual)
+      / max(1, spacing_target)
+    )^2
   )
 ```
 
-Key yoksa sadece `start -> door` uzakligi kullanilir. `spacing_actual` ve `spacing_target` terminalde ham path uzunlugu olarak gorunur; enerjiye giren normalize edilmis deger `spacing_score` alanidir. Bu terim ozellikle start-key-door uclusunun birbirine yapismasini cezalandirmak icindir.
+Key yoksa sadece `start -> door` uzakligi kullanilir. `spacing_actual` ve `spacing_target` terminalde ham path uzunlugu olarak gorunur; enerjiye giren normalize edilmis deger `spacing_score` alanidir.
+
+`spacing_score` karesel sapma kullandigi icin hedef spacing'den buyuk sapmalar lineer cezaya gore daha sert buyur ve `1` degerinde saturate olur. Bu terim ozellikle `start -> key` ve `key -> door` bacaklarinin birbirine yapismasini cezalandirmak icindir.
 
 ## Deterministic Randomness
 

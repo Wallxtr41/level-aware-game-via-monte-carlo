@@ -243,11 +243,9 @@ def stamina_agent_difficulty_energy_breakdown(
         target_agent_difficulty=target_agent_difficulty,
         spacing_target_scale=spacing_target_scale,
     )
-    spacing_normalizer = _spacing_normalizer(
-        state=state,
-        spacing_target_scale=spacing_target_scale,
-    )
-    spacing_score = min(1.0, abs(spacing_target - spacing_actual) / spacing_normalizer)
+    spacing_normalizer = max(1.0, spacing_target)
+    spacing_error_ratio = abs(spacing_target - spacing_actual) / spacing_normalizer
+    spacing_score = min(1.0, spacing_error_ratio * spacing_error_ratio)
     spacing_term = spacing_weight * spacing_score
 
     return EnergyBreakdown(
@@ -346,7 +344,6 @@ def _start_key_door_path_spacing(state: StaminaAwareEnergyState) -> float:
     distances = (
         _shortest_path_distance_or_zero(state.grid, state.start, key_item.position),
         _shortest_path_distance_or_zero(state.grid, key_item.position, state.door),
-        _shortest_path_distance_or_zero(state.grid, state.start, state.door),
     )
     return sum(distances) / len(distances)
 
@@ -372,13 +369,6 @@ def _target_path_spacing(
     grid_scale = _grid_path_scale(state.grid)
     difficulty_scale = 0.5 + (0.5 * target_agent_difficulty)
     return spacing_target_scale * grid_scale * difficulty_scale
-
-
-def _spacing_normalizer(
-    state: StaminaAwareEnergyState,
-    spacing_target_scale: float,
-) -> float:
-    return max(1.0, 2.0 * spacing_target_scale * _grid_path_scale(state.grid))
 
 
 def _grid_path_scale(grid: list[list[int]]) -> float:

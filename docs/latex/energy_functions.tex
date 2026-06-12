@@ -434,9 +434,7 @@ X_{\text{actual}}
   d(\text{start}, \text{key})
   +
   d(\text{key}, \text{door})
-  +
-  d(\text{start}, \text{door})
-}{3}
+}{2}
 \]
 
 Key yoksa:
@@ -469,11 +467,13 @@ X_{\text{score}}
 \min
 \left(
 1,
-\frac{
-  |X^\star - X_{\text{actual}}|
-}{
-  2K_XG
-}
+\left(
+  \frac{
+    |X^\star - X_{\text{actual}}|
+  }{
+    \max(1, X^\star)
+  }
+\right)^2
 \right)
 \]
 
@@ -488,7 +488,10 @@ W_X X_{\text{score}}
 Yorum:
 
 \begin{itemize}
-  \item Bu terim start, key ve door'un birbirine yapismasini cezalandirir.
+  \item Key varsa sadece \texttt{start -> key} ve \texttt{key -> door} bacaklari ortalamaya girer.
+  \item Key yoksa \texttt{start -> door} mesafesi kullanilir.
+  \item Bu terim ozellikle \texttt{start -> key} ve \texttt{key -> door} bacaklarinin birbirine yapismasini cezalandirir.
+  \item Karesel skor hedef spacing'den buyuk sapmalari lineer cezaya gore daha sert buyutur ve $1$ degerinde saturate olur.
   \item Difficulty arttikca target spacing artar.
   \item Mesafe Manhattan degil, shortest-path mesafesidir.
 \end{itemize}
