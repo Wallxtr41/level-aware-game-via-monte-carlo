@@ -122,6 +122,7 @@ class AgentDifficultySummary:
 
 
 _DIFFICULTY_CACHE: dict[tuple[object, ...], AgentDifficultySummary] = {}
+TARGET_VISION_RADIUS = 2
 
 
 def estimate_agent_difficulty(
@@ -498,8 +499,16 @@ def _choose_next_position(
     if not valid_neighbors:
         return None, False
 
-    if target in valid_neighbors:
-        return target, False
+    visible_target_step = _find_visible_target_step(
+        grid=grid,
+        current_position=current_position,
+        target=target,
+        blocked_positions=blocked_positions,
+        vision_radius=TARGET_VISION_RADIUS,
+    )
+
+    if visible_target_step in valid_neighbors:
+        return visible_target_step, False
 
     unvisited_neighbors = [
         next_position for next_position in valid_neighbors if next_position not in visited_positions
@@ -516,6 +525,56 @@ def _choose_next_position(
         return rng.choice(non_backtracking_neighbors), False
 
     return rng.choice(valid_neighbors), True
+
+
+def _find_visible_target_step(
+    *,
+    grid: list[list[int]],
+    current_position: Position,
+    target: Position,
+    blocked_positions: set[Position],
+    vision_radius: int,
+) -> Position | None:
+    if vision_radius <= 0:
+        return None
+
+    queue: list[tuple[Position, int]] = [(current_position, 0)]
+    parents: dict[Position, Position | None] = {current_position: None}
+
+    while queue:
+        position, distance = queue.pop(0)
+
+        if distance >= vision_radius:
+            continue
+
+        for next_position in iter_neighbors(*position):
+            if next_position in parents:
+                continue
+
+            if next_position != target and (
+                next_position in blocked_positions
+                or not is_walkable(grid, next_position[0], next_position[1])
+            ):
+                continue
+
+            parents[next_position] = position
+
+            if next_position == target:
+                cursor = target
+
+                while parents[cursor] != current_position:
+                    parent = parents[cursor]
+
+                    if parent is None:
+                        return None
+
+                    cursor = parent
+
+                return cursor
+
+            queue.append((next_position, distance + 1))
+
+    return None
 
 
 def _score_semantic_plan(

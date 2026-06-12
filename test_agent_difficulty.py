@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import random
 import unittest
 
 from utils.agent_difficulty import (
     AgentDifficultyConfig,
     enumerate_semantic_solution_plans,
     estimate_agent_difficulty,
+    simulate_segment_agent,
 )
 from utils.hard_constraints import StaminaOnlyHC3Problem
 from utils.map_entities import ItemPlacement
@@ -16,6 +18,25 @@ def grid_from_rows(*rows: str) -> list[list[int]]:
 
 
 class AgentDifficultyTests(unittest.TestCase):
+    def test_agent_follows_visible_path_to_target(self) -> None:
+        result = simulate_segment_agent(
+            grid=grid_from_rows(
+                "#####",
+                "#...#",
+                "#.###",
+                "#####",
+            ),
+            source=(1, 1),
+            target=(1, 3),
+            blocked_positions=set(),
+            start_stamina=2,
+            rng=random.Random(0),
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.total_steps, 2)
+        self.assertEqual(result.remaining_stamina, 0)
+
     def test_enumerates_multiple_semantic_solution_plans(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
