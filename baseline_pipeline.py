@@ -41,7 +41,7 @@ GRID_HEIGHT = 15
 START_POS = (1, 1)
 TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
-TARGET_AGENT_DIFFICULTY = 0.1
+TARGET_AGENT_DIFFICULTY = 0.5
 AGENT_DIFFICULTY_WEIGHT = 30.0
 SEGMENT_TARGET_WEIGHT = 15.0
 SEGMENT_BALANCE_WEIGHT = 0
@@ -61,6 +61,11 @@ AGENTS_PER_SEGMENT = 30
 AGENT_DIFFICULTY_SEED = 12345
 MAX_INITIAL_STATE_ATTEMPTS = 200
 MAX_ITEM_PLACEMENT_ATTEMPTS = 100
+INITIAL_DOOR_CANDIDATE_LIMIT = 8
+INITIAL_ITEM_CANDIDATE_LIMIT = 8
+INITIAL_VALID_CANDIDATE_LIMIT = 120
+INITIAL_EARLY_STOP_ENERGY = 1.0
+INITIAL_ITEM_MIN_START_DISTANCE_SCALE = 0.25
 GAME_MODE = "stamina_only"  # "door_only" or "stamina_only"
 STAMINA_ENERGY_MODEL = "agent_difficulty"  # "baseline" or "agent_difficulty"
 
@@ -571,6 +576,30 @@ def find_shortest_path(grid: Grid, start: Position, goal: Position) -> list[Posi
 
 
 def choose_stamina_mode_door_position(grid: Grid, start: Position, max_path_length: int) -> Position:
+    candidates = choose_stamina_mode_door_candidates(
+        grid=grid,
+        start=start,
+        max_path_length=max_path_length,
+        initial_stamina=None,
+        item_kinds=(),
+        limit=1,
+    )
+
+    if candidates:
+        return candidates[0]
+
+    return choose_door_position(grid, start)
+
+
+def choose_stamina_mode_door_candidates(
+    *,
+    grid: Grid,
+    start: Position,
+    max_path_length: int,
+    initial_stamina: int | None,
+    item_kinds: tuple[str, ...],
+    limit: int,
+) -> list[Position]:
     distances = bfs_distances(grid, start)
     candidate_positions = [
         position
@@ -579,12 +608,95 @@ def choose_stamina_mode_door_position(grid: Grid, start: Position, max_path_leng
     ]
 
     if not candidate_positions:
-        return choose_door_position(grid, start)
+        fallback = choose_door_position(grid, start)
+        return [fallback] if fallback != start else []
 
-    return min(
-        candidate_positions,
-        key=lambda position: (abs(distances[position] - TARGET_PATH_LENGTH), -distances[position]),
+    path_target = _initial_path_target(
+        max_path_length=max_path_length,
+        initial_stamina=initial_stamina,
+        item_kinds=item_kinds,
     )
+    target_sorted_candidates = sorted(
+        candidate_positions,
+        key=lambda position: (
+            abs(distances[position] - path_target),
+            -distances[position],
+            position,
+        ),
+    )
+    distance_sorted_candidates = sorted(
+        candidate_positions,
+        key=lambda position: (distances[position], position),
+    )
+    mixed_candidates: list[Position] = []
+
+    def add_positions(positions: list[Position]) -> None:
+        for position in positions:
+            if position in mixed_candidates:
+                continue
+
+            mixed_candidates.append(position)
+
+            if len(mixed_candidates) >= limit:
+                return
+
+    difficulty = min(1.0, max(0.0, TARGET_AGENT_DIFFICULTY))
+    near_count = 3 if difficulty <= 0.35 else 1
+    far_count = 3 if difficulty >= 0.65 else 1
+    target_count = max(1, limit - near_count - far_count)
+
+    add_positions(distance_sorted_candidates[:near_count])
+    add_positions(target_sorted_candidates[:target_count])
+    add_positions(list(reversed(distance_sorted_candidates[-far_count:])))
+
+    if len(mixed_candidates) < limit:
+        add_positions(target_sorted_candidates)
+
+    return mixed_candidates
+
+
+def _initial_spacing_target() -> float:
+    grid_scale = math.sqrt(max(1, GRID_WIDTH * GRID_HEIGHT))
+    difficulty_scale = 0.5 + (0.5 * TARGET_AGENT_DIFFICULTY)
+    return SPACING_TARGET_SCALE * grid_scale * difficulty_scale
+
+
+def _initial_path_target(
+    *,
+    max_path_length: int,
+    initial_stamina: int | None,
+    item_kinds: tuple[str, ...],
+) -> float:
+    if STAMINA_ENERGY_MODEL != "agent_difficulty" or initial_stamina is None:
+        return min(max_path_length, TARGET_PATH_LENGTH)
+
+    stamina_value_budget = sum(
+        get_default_item_value(item_kind)
+        for item_kind in item_kinds
+        if item_kind == "stamina"
+    )
+    stamina_usage_target = _target_stamina_usage_for_initial(item_kinds)
+    expected_stamina_budget = initial_stamina + (stamina_value_budget * stamina_usage_target)
+    target_final_stamina = (
+        FINAL_STAMINA_TARGET_FACTOR
+        * initial_stamina
+        * (1.0 - TARGET_AGENT_DIFFICULTY)
+    )
+    stamina_path_target = max(1.0, expected_stamina_budget - target_final_stamina)
+    key_count = sum(1 for item_kind in item_kinds if item_kind == "key")
+    spacing_path_target = _initial_spacing_target() * (2.0 if key_count else 1.0)
+    return min(max_path_length, max(stamina_path_target, spacing_path_target))
+
+
+def _target_stamina_usage_for_initial(item_kinds: tuple[str, ...]) -> float:
+    stamina_count = sum(1 for item_kind in item_kinds if item_kind == "stamina")
+
+    if stamina_count == 0:
+        return 0.0
+
+    explicit_target = TARGET_STAMINA_USAGE_RATE
+    stamina_usage_target = TARGET_AGENT_DIFFICULTY if explicit_target is None else explicit_target
+    return min(1.0, max(0.0, stamina_usage_target))
 
 
 def construct_stamina_mode_items(
@@ -656,6 +768,396 @@ def construct_stamina_mode_items(
     )
 
 
+def construct_stamina_mode_item_candidates(
+    *,
+    grid: Grid,
+    path: list[Position],
+    initial_stamina: int,
+    item_kinds: tuple[str, ...],
+    rng,
+) -> list[tuple[ItemPlacement, ...]]:
+    candidates: list[tuple[ItemPlacement, ...]] = []
+    seen_keys: set[tuple[tuple[str, Position], ...]] = set()
+    start_distances = bfs_distances(grid, path[0])
+    minimum_start_distances = _initial_item_start_distance_fallbacks(
+        _initial_min_item_start_distance(grid)
+    )
+
+    def add_candidate(
+        candidate: tuple[ItemPlacement, ...] | None,
+        *,
+        minimum_start_distance: int,
+    ) -> None:
+        if candidate is None:
+            return
+
+        if len(candidate) != len(item_kinds):
+            return
+
+        positions = [item.position for item in candidate]
+
+        if len(set(positions)) != len(positions):
+            return
+
+        if any(position in {path[0], path[-1]} for position in positions):
+            return
+
+        if any(
+            start_distances.get(position, 0) < minimum_start_distance
+            for position in positions
+        ):
+            return
+
+        candidate_key = tuple((item.kind, item.position) for item in candidate)
+
+        if candidate_key in seen_keys:
+            return
+
+        seen_keys.add(candidate_key)
+        candidates.append(candidate)
+
+    def generate_candidates(minimum_start_distance: int) -> None:
+        add_candidate(
+            construct_balanced_path_items(
+                path=path,
+                item_kinds=item_kinds,
+                stamina_on_path_count=sum(1 for item_kind in item_kinds if item_kind == "stamina"),
+            ),
+            minimum_start_distance=minimum_start_distance,
+        )
+        add_candidate(
+            construct_balanced_path_items(
+                path=path,
+                item_kinds=item_kinds,
+                stamina_on_path_count=_target_on_path_stamina_count(item_kinds),
+            ),
+            minimum_start_distance=minimum_start_distance,
+        )
+        add_candidate(
+            construct_mixed_path_branch_items(
+                grid=grid,
+                path=path,
+                item_kinds=item_kinds,
+                stamina_on_path_count=_target_on_path_stamina_count(item_kinds),
+            ),
+            minimum_start_distance=minimum_start_distance,
+        )
+        add_candidate(
+            construct_stamina_mode_items(
+                path=path,
+                initial_stamina=initial_stamina,
+                item_kinds=item_kinds,
+            ),
+            minimum_start_distance=minimum_start_distance,
+        )
+
+        random_attempts = 0
+        max_random_attempts = INITIAL_ITEM_CANDIDATE_LIMIT * 8
+
+        while len(candidates) < INITIAL_ITEM_CANDIDATE_LIMIT and random_attempts < max_random_attempts:
+            randomized_candidate = construct_randomized_path_items(
+                grid=grid,
+                path=path,
+                item_kinds=item_kinds,
+                rng=rng,
+            )
+
+            if randomized_candidate is None:
+                break
+
+            add_candidate(
+                randomized_candidate,
+                minimum_start_distance=minimum_start_distance,
+            )
+            random_attempts += 1
+
+    for minimum_start_distance in minimum_start_distances:
+        generate_candidates(minimum_start_distance)
+
+        if candidates:
+            break
+
+    return candidates[:INITIAL_ITEM_CANDIDATE_LIMIT]
+
+
+def construct_balanced_path_items(
+    *,
+    path: list[Position],
+    item_kinds: tuple[str, ...],
+    stamina_on_path_count: int,
+) -> tuple[ItemPlacement, ...] | None:
+    path_end_index = len(path) - 1
+
+    if path_end_index <= len(item_kinds):
+        return None
+
+    stamina_count = sum(1 for item_kind in item_kinds if item_kind == "stamina")
+    key_count = sum(1 for item_kind in item_kinds if item_kind == "key")
+    stamina_on_path_count = min(stamina_count, max(0, stamina_on_path_count))
+    used_indices: set[int] = set()
+    positions_by_kind: dict[str, list[Position]] = {"stamina": [], "key": []}
+
+    if key_count:
+        key_indices = _spread_indices(
+            start_index=1,
+            end_index=path_end_index - 1,
+            count=key_count,
+        )
+        positions_by_kind["key"].extend(path[index] for index in key_indices)
+        used_indices.update(key_indices)
+
+    if stamina_on_path_count:
+        stamina_indices = _spread_available_indices(
+            start_index=1,
+            end_index=path_end_index - 1,
+            count=stamina_on_path_count,
+            used_indices=used_indices,
+        )
+        positions_by_kind["stamina"].extend(path[index] for index in stamina_indices)
+        used_indices.update(stamina_indices)
+
+    off_path_stamina_count = stamina_count - stamina_on_path_count
+
+    if off_path_stamina_count:
+        return None
+
+    return _build_items_from_positions(item_kinds=item_kinds, positions_by_kind=positions_by_kind)
+
+
+def construct_mixed_path_branch_items(
+    *,
+    grid: Grid,
+    path: list[Position],
+    item_kinds: tuple[str, ...],
+    stamina_on_path_count: int,
+) -> tuple[ItemPlacement, ...] | None:
+    path_candidate = construct_balanced_path_items(
+        path=path,
+        item_kinds=tuple(
+            item_kind
+            for item_kind in item_kinds
+            if item_kind != "stamina"
+        )
+        + tuple("stamina" for _ in range(stamina_on_path_count)),
+        stamina_on_path_count=stamina_on_path_count,
+    )
+
+    if path_candidate is None:
+        return None
+
+    stamina_count = sum(1 for item_kind in item_kinds if item_kind == "stamina")
+    off_path_stamina_count = stamina_count - stamina_on_path_count
+    positions_by_kind: dict[str, list[Position]] = {"stamina": [], "key": []}
+
+    for item in path_candidate:
+        positions_by_kind.setdefault(item.kind, []).append(item.position)
+
+    if off_path_stamina_count:
+        blocked_positions = {path[0], path[-1], *(item.position for item in path_candidate)}
+        off_path_positions = choose_spread_off_path_positions(
+            grid=grid,
+            path=path,
+            blocked_positions=blocked_positions,
+            count=off_path_stamina_count,
+        )
+
+        if len(off_path_positions) < off_path_stamina_count:
+            return None
+
+        positions_by_kind["stamina"].extend(off_path_positions)
+
+    return _build_items_from_positions(item_kinds=item_kinds, positions_by_kind=positions_by_kind)
+
+
+def construct_randomized_path_items(
+    *,
+    grid: Grid,
+    path: list[Position],
+    item_kinds: tuple[str, ...],
+    rng,
+) -> tuple[ItemPlacement, ...] | None:
+    interior_positions = path[1:-1]
+
+    if len(interior_positions) < len(item_kinds):
+        return None
+
+    stamina_count = sum(1 for item_kind in item_kinds if item_kind == "stamina")
+    key_count = sum(1 for item_kind in item_kinds if item_kind == "key")
+    on_path_stamina_count = rng.randint(0, stamina_count) if stamina_count else 0
+    used_positions: set[Position] = set()
+    positions_by_kind: dict[str, list[Position]] = {"stamina": [], "key": []}
+
+    key_sample_pool = interior_positions[:]
+    rng.shuffle(key_sample_pool)
+    key_positions = key_sample_pool[:key_count]
+    positions_by_kind["key"].extend(key_positions)
+    used_positions.update(key_positions)
+
+    path_stamina_pool = [
+        position
+        for position in interior_positions
+        if position not in used_positions
+    ]
+    rng.shuffle(path_stamina_pool)
+    path_stamina_positions = path_stamina_pool[:on_path_stamina_count]
+    positions_by_kind["stamina"].extend(path_stamina_positions)
+    used_positions.update(path_stamina_positions)
+
+    off_path_stamina_count = stamina_count - len(path_stamina_positions)
+
+    if off_path_stamina_count:
+        off_path_positions = choose_spread_off_path_positions(
+            grid=grid,
+            path=path,
+            blocked_positions={path[0], path[-1], *used_positions},
+            count=off_path_stamina_count,
+        )
+
+        if len(off_path_positions) < off_path_stamina_count:
+            return None
+
+        positions_by_kind["stamina"].extend(off_path_positions)
+
+    return _build_items_from_positions(item_kinds=item_kinds, positions_by_kind=positions_by_kind)
+
+
+def choose_spread_off_path_positions(
+    *,
+    grid: Grid,
+    path: list[Position],
+    blocked_positions: set[Position],
+    count: int,
+) -> list[Position]:
+    path_positions = set(path)
+    candidate_positions = [
+        position
+        for position in get_walkable_positions(grid, blocked_positions=blocked_positions)
+        if position not in path_positions
+    ]
+    selected_positions: list[Position] = []
+
+    while candidate_positions and len(selected_positions) < count:
+        best_position = max(
+            candidate_positions,
+            key=lambda position: (
+                _min_manhattan_distance(position, [*path, *selected_positions]),
+                position,
+            ),
+        )
+        selected_positions.append(best_position)
+        candidate_positions.remove(best_position)
+
+    return selected_positions
+
+
+def _target_on_path_stamina_count(item_kinds: tuple[str, ...]) -> int:
+    stamina_count = sum(1 for item_kind in item_kinds if item_kind == "stamina")
+
+    if stamina_count == 0:
+        return 0
+
+    stamina_usage_target = _target_stamina_usage_for_initial(item_kinds)
+    target_count = math.floor((stamina_count * stamina_usage_target) + 0.5)
+    return min(stamina_count, max(0, target_count))
+
+
+def _initial_min_item_start_distance(grid: Grid) -> int:
+    grid_scale = math.sqrt(max(1, len(grid) * (len(grid[0]) if grid else 0)))
+    return max(2, round(grid_scale * INITIAL_ITEM_MIN_START_DISTANCE_SCALE))
+
+
+def _initial_item_start_distance_fallbacks(minimum_distance: int) -> tuple[int, ...]:
+    relaxed_distance = max(2, minimum_distance // 2)
+    fallback_distances = (minimum_distance, relaxed_distance, 1)
+    unique_distances: list[int] = []
+
+    for distance in fallback_distances:
+        if distance not in unique_distances:
+            unique_distances.append(distance)
+
+    return tuple(unique_distances)
+
+
+def _spread_indices(start_index: int, end_index: int, count: int) -> list[int]:
+    if count <= 0:
+        return []
+
+    if end_index < start_index:
+        return []
+
+    span = end_index - start_index + 1
+    return [
+        start_index + min(span - 1, max(0, round(((index + 1) * span / (count + 1)) - 1)))
+        for index in range(count)
+    ]
+
+
+def _spread_available_indices(
+    *,
+    start_index: int,
+    end_index: int,
+    count: int,
+    used_indices: set[int],
+) -> list[int]:
+    available_indices = [
+        index
+        for index in range(start_index, end_index + 1)
+        if index not in used_indices
+    ]
+
+    if len(available_indices) < count:
+        return []
+
+    return [
+        available_indices[
+            min(
+                len(available_indices) - 1,
+                max(0, round(((index + 1) * len(available_indices) / (count + 1)) - 1)),
+            )
+        ]
+        for index in range(count)
+    ]
+
+
+def _build_items_from_positions(
+    *,
+    item_kinds: tuple[str, ...],
+    positions_by_kind: dict[str, list[Position]],
+) -> tuple[ItemPlacement, ...] | None:
+    remaining_positions_by_kind = {
+        item_kind: positions[:]
+        for item_kind, positions in positions_by_kind.items()
+    }
+    placements: list[ItemPlacement] = []
+
+    for item_kind in item_kinds:
+        item_positions = remaining_positions_by_kind.get(item_kind, [])
+
+        if not item_positions:
+            return None
+
+        position = item_positions.pop(0)
+        placements.append(
+            ItemPlacement(
+                kind=item_kind,
+                position=position,
+                value=get_default_item_value(item_kind),
+            )
+        )
+
+    return tuple(placements)
+
+
+def _min_manhattan_distance(position: Position, other_positions: list[Position]) -> int:
+    if not other_positions:
+        return 0
+
+    return min(
+        abs(position[0] - other_position[0]) + abs(position[1] - other_position[1])
+        for other_position in other_positions
+    )
+
+
 def build_hc3_problem(state: BaselineState) -> StaminaOnlyHC3Problem:
     return StaminaOnlyHC3Problem(
         grid=state.grid,
@@ -693,47 +1195,71 @@ def is_state_valid(state: BaselineState) -> bool:
 def create_initial_state() -> BaselineState:
     mode_config = get_mode_config()
     initial_stamina = resolve_initial_stamina(mode_config)
+    energy_function = get_energy_function()
+    best_state: BaselineState | None = None
+    best_energy = math.inf
+    valid_candidate_count = 0
 
     for _ in range(MAX_INITIAL_STATE_ATTEMPTS):
         grid = generate_maze_map(GRID_WIDTH, GRID_HEIGHT)
-        max_path_length = initial_stamina + sum(
-            get_default_item_value(item_kind)
-            for item_kind in mode_config.item_kinds
-            if item_kind == "stamina"
-        )
-        door = (
-            choose_stamina_mode_door_position(grid, START_POS, max_path_length)
-            if mode_config.uses_stamina_solver
-            else choose_door_position(grid, START_POS)
-        )
 
         if mode_config.uses_stamina_solver:
-            path = find_shortest_path(grid, START_POS, door)
-
-            if path is None:
-                continue
-
-            items = construct_stamina_mode_items(
-                path=path,
-                initial_stamina=initial_stamina,
-                item_kinds=mode_config.item_kinds,
+            max_path_length = initial_stamina + sum(
+                get_default_item_value(item_kind)
+                for item_kind in mode_config.item_kinds
+                if item_kind == "stamina"
             )
-
-            if items is None:
-                continue
-
-            state = BaselineState(
+            door_candidates = choose_stamina_mode_door_candidates(
                 grid=grid,
                 start=START_POS,
-                door=door,
-                items=items,
+                max_path_length=max_path_length,
                 initial_stamina=initial_stamina,
-                locked_door=mode_config.locked_door,
+                item_kinds=mode_config.item_kinds,
+                limit=INITIAL_DOOR_CANDIDATE_LIMIT,
             )
 
-            if is_state_valid(state):
-                return state
+            for door in door_candidates:
+                path = find_shortest_path(grid, START_POS, door)
+
+                if path is None:
+                    continue
+
+                item_candidates = construct_stamina_mode_item_candidates(
+                    grid=grid,
+                    path=path,
+                    initial_stamina=initial_stamina,
+                    item_kinds=mode_config.item_kinds,
+                    rng=random,
+                )
+
+                for items in item_candidates:
+                    state = BaselineState(
+                        grid=grid,
+                        start=START_POS,
+                        door=door,
+                        items=items,
+                        initial_stamina=initial_stamina,
+                        locked_door=mode_config.locked_door,
+                    )
+
+                    if not is_state_valid(state):
+                        continue
+
+                    valid_candidate_count += 1
+                    candidate_energy = energy_function(state)
+
+                    if candidate_energy < best_energy:
+                        best_energy = candidate_energy
+                        best_state = state
+
+                    if candidate_energy <= INITIAL_EARLY_STOP_ENERGY:
+                        return state
+
+                    if valid_candidate_count >= INITIAL_VALID_CANDIDATE_LIMIT:
+                        return best_state
             continue
+
+        door = choose_door_position(grid, START_POS)
 
         for _ in range(MAX_ITEM_PLACEMENT_ATTEMPTS):
             items = place_items(
@@ -753,6 +1279,9 @@ def create_initial_state() -> BaselineState:
 
             if is_state_valid(state):
                 return state
+
+    if best_state is not None:
+        return best_state
 
     raise ValueError("Could not generate an initial HC1/HC2/HC3-valid state.")
 

@@ -77,8 +77,14 @@ Bu, bilinçli olarak seçilmiş sade bir alt model.
 
 ## Doğal Sonraki Adımlar
 
-### 1. Constructive initial state generator’ı güçlendirmek
-Başlangıç state üretimini daha kontrollü hale getirmek.
+### 1. Constructive initial state generator’ı daha da iyileştirmek
+Başlangıç state üretimi artık candidate-pool ve energy-aware seçim kullanıyor.
+
+Sonraki olası iyileştirmeler:
+- maze topolojisini de target difficulty'ye göre constructive üretmek
+- low difficulty için daha az dallanan ana koridorlar üretmek
+- high difficulty için branch/loop yoğunluğunu kontrollü artırmak
+- initial candidate pool'u adaptive yapmak
 
 ### 2. Energy’ye yeni terimler eklemek
 Örnek:

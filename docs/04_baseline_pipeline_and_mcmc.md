@@ -68,16 +68,36 @@ Sebep:
 - tamamen rastgele item ve door konumları
 - HC3’ü çok sık bozuyordu
 
-Bu yüzden daha yapıcı bir seed üretimi eklendi.
+Bu yüzden constructive ve energy-aware bir seed üretimi kullanılır.
 
-Akış:
+Güncel akış:
 1. maze üretilir
-2. kapı, erişilebilir toplam stamina bütçesi göz önüne alınarak seçilir
-3. `start -> door` shortest path bulunur
-4. stamina item’ları ve key bu çözüm omurgası üstüne yerleştirilir
-5. sonra HC3 ile doğrulanır
+2. otomatik veya config kaynaklı `initial_stamina` hesaplanır
+3. stamina bütçesi, target difficulty, spacing hedefi ve stamina usage hedefi ile birden fazla door adayı üretilir
+4. door adayları sadece tek hedef mesafeden seçilmez; yakın, hedefe yakın ve uzak adaylar birlikte denenir
+5. her door adayı için `start -> door` shortest path bulunur
+6. her path için birden fazla item placement stratejisi denenir
+7. her candidate HC1/HC2/HC3 ile doğrulanır
+8. valid candidate’ların energy değeri hesaplanır
+9. `INITIAL_VALID_CANDIDATE_LIMIT` kadar valid candidate içinden en düşük energy’li state seçilir
+10. candidate energy `INITIAL_EARLY_STOP_ENERGY` altına inerse arama erken biter
 
-Bu sayede başlangıçta geçerli bir harita bulma şansı ciddi artar.
+Item placement stratejileri:
+- tüm stamina/key item’larını path üzerinde dengeli dağıtma
+- `TARGET_STAMINA_USAGE_RATE` veya `TARGET_AGENT_DIFFICULTY` kadar stamina item’ı ana route üstüne koyup kalanları off-path yayma
+- eski progressive path placement fallback’i
+- sınırlı sayıda randomized path/off-path placement
+
+Item placement adayları ayrıca start'a çok yakın olmamaları için filtrelenir. Minimum uzaklık grid boyutundan türetilir:
+
+```text
+min_item_start_distance =
+  max(2, round(sqrt(GRID_WIDTH * GRID_HEIGHT) * INITIAL_ITEM_MIN_START_DISTANCE_SCALE))
+```
+
+Bu uzaklık BFS shortest-path mesafesidir, Manhattan değildir. Eğer bir maze/path bu şartla hiç candidate üretemezse generator sırasıyla daha gevşek fallback eşiklerine düşer. Böylece item'ların start'a yapışması engellenir ama initial state üretimi tamamen kilitlenmez.
+
+Bu tasarım initial state’i tek bir hard-coded çözüm rotasına kilitlemez. Energy fonksiyonu hangi aday hedeflere daha uygunsa onu seçer. Energy fonksiyonu ileride değişirse initial state generator da otomatik olarak yeni hedeflere daha uyumlu state seçmeye başlar.
 
 ## Proposal Hamleleri
 
