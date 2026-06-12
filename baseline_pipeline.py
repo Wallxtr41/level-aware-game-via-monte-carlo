@@ -24,7 +24,13 @@ from utils.hard_constraints import (
     is_stamina_only_hc3_satisfied,
     would_create_open_2x2,
 )
-from utils.map_analysis import bfs_distances, copy_grid, is_walkable, iter_neighbors
+from utils.map_analysis import (
+    bfs_distances,
+    bfs_distances_with_blocked,
+    copy_grid,
+    is_walkable,
+    iter_neighbors,
+)
 from utils.map_entities import (
     get_default_item_value,
     ItemPlacement,
@@ -605,11 +611,16 @@ def choose_stamina_mode_door_candidates(
         position
         for position, distance in distances.items()
         if position != start and distance <= max_path_length
+        and is_door_non_partitioning(grid, start, position)
     ]
 
     if not candidate_positions:
-        fallback = choose_door_position(grid, start)
-        return [fallback] if fallback != start else []
+        fallback_positions = [
+            position
+            for position in distances
+            if position != start and is_door_non_partitioning(grid, start, position)
+        ]
+        return fallback_positions[:1]
 
     path_target = _initial_path_target(
         max_path_length=max_path_length,
@@ -632,6 +643,9 @@ def choose_stamina_mode_door_candidates(
 
     def add_positions(positions: list[Position]) -> None:
         for position in positions:
+            if len(mixed_candidates) >= limit:
+                return
+
             if position in mixed_candidates:
                 continue
 
@@ -1169,6 +1183,33 @@ def build_hc3_problem(state: BaselineState) -> StaminaOnlyHC3Problem:
     )
 
 
+def is_door_non_partitioning(grid: Grid, start: Position, door: Position) -> bool:
+    if start == door:
+        return False
+
+    start_row, start_col = start
+    door_row, door_col = door
+
+    if not is_walkable(grid, start_row, start_col):
+        return False
+
+    if not is_walkable(grid, door_row, door_col):
+        return False
+
+    reachable_without_door = bfs_distances_with_blocked(
+        grid,
+        start,
+        blocked_positions={door},
+    )
+    walkable_without_door_count = sum(
+        1
+        for row_index, row in enumerate(grid)
+        for col_index, cell in enumerate(row)
+        if cell == 0 and (row_index, col_index) != door
+    )
+    return len(reachable_without_door) == walkable_without_door_count
+
+
 def is_state_valid(state: BaselineState) -> bool:
     mode_config = get_mode_config()
     start_row, start_col = state.start
@@ -1178,6 +1219,9 @@ def is_state_valid(state: BaselineState) -> bool:
         return False
 
     if not is_walkable(state.grid, door_row, door_col):
+        return False
+
+    if not is_door_non_partitioning(state.grid, state.start, state.door):
         return False
 
     if not is_hc2_satisfied(state.grid):
@@ -1352,7 +1396,11 @@ def pick_random_item_destination(state: BaselineState, item_index: int) -> Posit
 
 def pick_random_door_destination(state: BaselineState) -> Position | None:
     blocked_positions = get_protected_positions(state) - {state.door}
-    walkable_positions = get_walkable_positions(state.grid, blocked_positions=blocked_positions)
+    walkable_positions = [
+        position
+        for position in get_walkable_positions(state.grid, blocked_positions=blocked_positions)
+        if is_door_non_partitioning(state.grid, state.start, position)
+    ]
 
     if not walkable_positions:
         return None

@@ -1,74 +1,72 @@
-# Sistem Özeti
+# Sistem Ozeti
 
-Bu proje, grid tabanlı bir kaçış oyunu için harita üretmeyi amaçlar. Ana fikir, geçerli ve hedeflenen zorluk profiline yakın haritaları Monte Carlo / MCMC benzeri bir arama ile üretmektir.
+Bu proje, grid tabanli bir kacis oyunu icin gecerli ve hedeflenen zorluk profiline yakin haritalar uretir. Uretim akisi Monte Carlo / MCMC benzeri kucuk state degisiklikleriyle calisir.
 
-Şu an sistem iki ayrı mod destekler:
+## Modlar
 
-## 1. `door_only`
+### `door_only`
 
-Bu en ilkel baseline moddur.
+En basit baseline moddur.
 
 Kurallar:
-- haritada sadece `start` ve `door` kritik öğelerdir
+- haritada sadece `start` ve `door` kritik ogelerdir
 - stamina yoktur
 - item yoktur
-- kapı açıktır
+- kapi aciktir
 
-Bu modda amaç:
-- topolojik olarak geçerli bir maze üretmek
-- `start -> door` en kısa yol uzunluğunu hedefe yaklaştırmak
+Amac:
+- topolojik olarak gecerli bir maze uretmek
+- `start -> door` en kisa yol uzunlugunu hedefe yaklastirmak
 
-## 2. `stamina_only`
+### `stamina_only`
 
-Bu mod, `door_only` modun daha zengin bir versiyonudur.
+`door_only` modun stamina, key ve kilitli kapi iceren versiyonudur.
 
 Kurallar:
-- `start` vardır
-- bir `door` vardır
-- kapı kilitli olabilir
+- `start` vardir
+- bir `door` vardir
+- kapi kilitli olabilir
 - bir `key` olabilir
 - bir veya daha fazla `stamina` item olabilir
 - canavar yoktur
 - power item yoktur
 
-Bu modun en kritik semantiği:
-- kapalı kapı geçilebilir
-- yani kapalı kapı duvar gibi davranmaz
-- sadece kapı hücresine ulaşmak başarı için yetmez
-- başarı için kapının aktif hale gelmiş olması gerekir
-- kapı aktif olma koşulu:
-  - ya kapı baştan açıktır
-  - ya da anahtar alınmıştır
+Guncel kapi karari:
+- kapali kapi transit yol degildir
+- anahtar alinana kadar duvar gibi bloklanir
+- kapi bastan aciksa veya anahtar alindiysa aktif hedef olur
+- aktif kapiya `0 stamina` ile ulasmak basari sayilir
 
-Ek olarak:
-- kapıya tam `0 stamina` ile ulaşmak başarı sayılır
+Bu karar HC3 solver, semantic plan enumeration, agent segment simulation ve spacing enerji hesabinda ayni sekilde uygulanir.
 
 ## Ana Dosyalar
 
 ### `baseline_pipeline.py`
-Mevcut baseline üretim ve MCMC akışını taşır.
+
+Baseline uretim, initial state secimi, proposal hamleleri ve MCMC akisidir.
 
 ### `utils/hard_constraints/hc3_stamina_only_solver.py`
-`stamina_only` model için exact solvability kontrolü yapar.
+
+`stamina_only` modeli icin exact solvability kontrolu yapar.
+
+### `utils/agent_difficulty.py`
+
+Semantic planlari enumerate eder ve her segmentte heuristic ajan simulasyonlari calistirir.
 
 ### `utils/energy_functions.py`
-Hem eski basit energy fonksiyonunu hem de yeni stamina-aware baseline energy’yi içerir.
 
-### `main.py`
-Rastgele bir maze layout’un Pygame ile temel görselleştirmesini yapar.
+Door-only energy, stamina-aware baseline energy ve agent difficulty energy fonksiyonlarini icerir.
 
-### `viz_maze.py`
-`baseline_pipeline` ile üretilen final veya best state’i Pygame içinde gösterir. Çözüm yolu overlay’i de buradadır.
+### `main.py`, `viz_maze.py`, `play_maze.py`
 
-## Genel Çalışma Akışı
+Harita gorsellestirme, debug overlay ve oynanabilir Pygame akisini tasir.
 
-Sistemin üst düzey akışı şöyledir:
+## Genel Calisma Akisi
 
-1. Başlangıç için geçerli bir state üretilir.
-2. Bu state için energy hesaplanır.
-3. MCMC adımlarında küçük proposal hamleleri denenir.
-4. Yeni candidate state constraint’leri sağlıyorsa energy hesaplanır.
-5. Metropolis-Hastings kuralı ile kabul veya red verilir.
-6. En iyi görülen state ayrıca saklanır.
-7. `viz_maze.py` ile final ya da best state görselleştirilebilir.
-
+1. Baslangic icin gecerli bir state uretilir.
+2. Bu state icin energy hesaplanir.
+3. MCMC adimlarinda kucuk proposal hamleleri denenir.
+4. Candidate state hard constraint'leri sagliyorsa energy hesaplanir.
+5. Metropolis-Hastings kuralina gore kabul veya red verilir.
+6. En iyi gorulen state ayrica saklanir.
+7. `viz_maze.py` veya `play_maze.py` ile final/best state incelenebilir.

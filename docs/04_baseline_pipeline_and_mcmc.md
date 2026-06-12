@@ -186,3 +186,4 @@ Pipeline şu bilgileri yazar:
 - best state özeti
 
 `viz_maze.py` kullanıldığında da artık final ve best summary ayrıca terminale yazdırılır.
+> Guncel ek hard constraint: Door hucre si blok kabul edildiginde start, door disindaki tum walkable hucrelere erisebilmelidir. Initial door adaylari ve door_move proposal'lari bu kurala gore filtrelenir; topology hamleleri de `is_state_valid` icinde ayni kontrolden gecer.

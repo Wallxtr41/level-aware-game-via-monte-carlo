@@ -78,9 +78,10 @@ class InitialStaminaFormulaTests(unittest.TestCase):
         try:
             bp.TARGET_AGENT_DIFFICULTY = 0.1
             grid = [
-                [1, 1, 1, 1, 1, 1, 1],
-                [1, 0, 0, 0, 0, 0, 1],
-                [1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 0, 0, 0, 0, 0, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1],
             ]
             candidates = bp.choose_stamina_mode_door_candidates(
                 grid=grid,
@@ -95,6 +96,26 @@ class InitialStaminaFormulaTests(unittest.TestCase):
 
         self.assertIn((1, 2), candidates)
         self.assertLessEqual(len(candidates), 4)
+
+    def test_door_partitioning_is_rejected(self) -> None:
+        grid = [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+        ]
+
+        self.assertFalse(bp.is_door_non_partitioning(grid, (1, 1), (1, 3)))
+        self.assertTrue(bp.is_door_non_partitioning(grid, (1, 1), (1, 5)))
+
+    def test_door_with_alternate_route_is_allowed(self) -> None:
+        grid = [
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1],
+        ]
+
+        self.assertTrue(bp.is_door_non_partitioning(grid, (1, 1), (1, 3)))
 
     def test_initial_item_candidates_avoid_start_when_possible(self) -> None:
         original_min_distance_scale = bp.INITIAL_ITEM_MIN_START_DISTANCE_SCALE

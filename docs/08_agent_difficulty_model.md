@@ -71,7 +71,7 @@ Bir plan door'a ulasan semantic siralama ise listeye eklenir. Planin exact olara
 
 Plan icinde ayni non-door semantic node tekrar ziyaret edilmez. Bu, semantic seviyede gereksiz cycle olusmasini engeller.
 
-Kilitli kapi, key alinmadan semantic target olarak enumerate edilmez. Bu durumda kapi sadece yol gibi transit hucredir. Key alindiktan sonra veya kapi basta aciksa door semantic target olarak planlara girebilir.
+Kilitli kapi, key alinmadan semantic target olarak enumerate edilmez ve transit hucre olarak da kullanilmaz. Bu durumda kapi duvar gibi davranir. Key alindiktan sonra veya kapi basta aciksa door semantic target olarak planlara girebilir.
 
 Toplanmamis item node'lari segment icinde terminal/blok gibi davranir. Toplanmis item node'lari ise sonraki segmentlerde normal yol gibi transit gecilebilir. Bu sayede `start -> key -> stamina -> door` gibi bir plan, `stamina -> door` segmentinde daha once toplanmis key hucrelerinden gecebilir.
 
@@ -148,8 +148,8 @@ start -> item:key
 Bu segmentte:
 - `item:key` hedef oldugu icin girilebilir
 - diger stamina item'lar bloktur
-- kapi aktif degilse yol gibi transit gecilebilir
-- kapi aktifse ve target degilse bloktur
+- kapi aktif degilse bloktur
+- kapi aktifse ve target degilse yine bloktur
 
 Eger key daha once toplanmis olsaydi, key hucreleri sonraki segmentlerde blok olmazdi.
 
@@ -157,16 +157,16 @@ Bu kural, ajanlarin baska item'larin ustunden transit gecerek segment mantigini 
 
 ## Kapi Davranisi
 
-Bu projede kapali kapi normal oyunda transit hucredir. Agent segment sampling de ayni kurali izler.
+Bu projede kapali kapi artik transit hucre degildir. Agent segment sampling de HC3 ile ayni kurali izler.
 
 Kural:
-- kapi kapali/inaktifse semantic target degildir ve yol gibi gecilebilir
-- kapi acik/aktifse artik semantic target anlamina gelir
+- kapi kapali/inaktifse semantic target degildir ve duvar gibi bloklanir
+- kapi acik/aktifse semantic target anlamina gelir
 - kapi aktifken segment target'i degilse bloklanir
 - kapi aktifken segment target'i ise girilebilir ve basari hedefidir
 
 Bu ayrim onemli:
-- `start -> item:key` segmentinde kilitli kapi aradaysa ajan kapinin ustunden gecebilir
+- `start -> item:key` segmentinde kilitli kapi aradaysa ajan kapinin ustunden gecemez
 - `item:key -> item:stamina` segmentinde kapi artik aktifse ve target degilse ajan kapidan transit gecmez
 - `item:key -> door` segmentinde kapi target oldugu icin girilebilir
 

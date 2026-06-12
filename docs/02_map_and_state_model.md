@@ -1,57 +1,50 @@
 # Map ve State Modeli
 
-Bu dosya, projede haritanın ve algoritmanın üzerinde çalıştığı state yapısının ne olduğunu açıklar.
+Bu dosya, haritanin ve MCMC/solver tarafinda kullanilan state yapilarinin neyi temsil ettigini aciklar.
 
 ## Grid Temsili
 
 Harita 2D grid olarak tutulur.
 
-Kullanılan temel hücre kodları:
+Hucre kodlari:
 - `0`: yol / walkable cell
 - `1`: duvar / blocked cell
 
-Bu grid:
-- connectivity analizlerinde
-- shortest path hesaplarında
-- HC1/HC2/HC3 kontrollerinde
-- görselleştirmede
-
-kullanılır.
+Grid su islemlerde kullanilir:
+- connectivity analizleri
+- shortest path hesaplari
+- HC1/HC2/HC3 kontrolleri
+- gorsellestirme
 
 ## Temel Konumlar
 
-Her state içinde en az şu konumlar vardır:
+Her state icinde en az sunlar vardir:
 - `start`
 - `door`
 
-`stamina_only` modda ayrıca:
+`stamina_only` modda ek olarak:
 - `key`
-- `stamina` item’ları
-
-vardır.
+- `stamina` itemlari
 
 ## Item Modeli
 
-Item’lar `utils/map_entities.py` içindeki `ItemPlacement` ile temsil edilir.
+Item'lar `utils/map_entities.py` icindeki `ItemPlacement` ile temsil edilir.
 
-Alanları:
+Alanlar:
 - `kind`
 - `position`
 - `value`
 
-Şu an varsayılan item değerleri:
-- `stamina -> 6`
-- `key -> 0`
-- `power -> 3`
+Ornek kind'lar:
+- `stamina`
+- `key`
+- `power`
 
-Not:
-- `power` şu an `stamina_only` baseline’da kullanılmıyor
-- ama genel entity modeli içinde tanımlı
+`power` genel entity modelinde vardir ama mevcut stamina-only baseline'da kullanilmaz.
 
 ## BaselineState
 
-`baseline_pipeline.py` içinde MCMC’nin çalıştığı ana state:
-
+`baseline_pipeline.py` icinde MCMC'nin calistigi ana state:
 - `grid`
 - `start`
 - `door`
@@ -59,70 +52,52 @@ Not:
 - `initial_stamina`
 - `locked_door`
 
-Bu state, hem `door_only` hem `stamina_only` modu için ortak container olarak kullanılır.
+Bu container hem `door_only` hem `stamina_only` modu icin kullanilir.
 
-## `door_only` Modda State Yorumu
+## `door_only` Yorumu
 
 Bu modda:
-- `items` boş olabilir
+- `items` bostur
 - `initial_stamina = 0`
 - `locked_door = False`
 
-Dolayısıyla asıl anlamlı parçalar:
+Anlamli parcalar:
 - grid
 - start
 - door
 
-olur.
+## `stamina_only` Yorumu
 
-## `stamina_only` Modda State Yorumu
+Bu modda:
+- `initial_stamina`, oyuncunun baslangic stamina butcesidir
+- `items`, key ve stamina itemlarini tasir
+- `locked_door`, kapinin baslangicta kilitli olup olmadigini soyler
 
-Bu modda state şu semantiğe sahiptir:
+`initial_stamina` MCMC proposal'lari sirasinda degismez. `initial_stamina = None` ise deger initial state uretiminde grid boyutu, `TARGET_AGENT_DIFFICULTY` ve seed'e bagli normal sapma ile otomatik hesaplanir.
 
-- `initial_stamina`: oyuncunun başlangıçtaki stamina bütçesi
-- `items`: key ve stamina item’ları
-- `locked_door`: kapının başlangıçta kilitli olup olmadığını söyler
+`locked_door` proposal hamlesiyle degismez; config seviyesinde belirlenir.
 
-`initial_stamina` MCMC proposal'ları sırasında değişmez. `stamina_only` config'inde `initial_stamina = None` kullanılırsa değer initial state üretiminde grid boyutu, `TARGET_AGENT_DIFFICULTY` ve seed'e bağlı normal sapma ile otomatik hesaplanır.
+## Kapi Semantigi
 
-Burada önemli tasarım kararı şudur:
-- `locked_door` proposal sırasında değişmez
-- bu değer başta config ile verilir
+Guncel karar:
+- kapali kapi duvar gibi bloklanir
+- kapali kapi semantic target degildir
+- kapali kapi transit yol degildir
+- anahtar alindiktan sonra veya kapi bastan aciksa aktif target olur
+- aktif kapiya ulasmak oyunu bitirir
 
-## Semantic State ve Solver State Ayrımı
+Bu semantik su katmanlarda ayni uygulanir:
+- exact HC3 solver
+- semantic plan enumeration
+- agent segment simulation
+- spacing energy icindeki start-key-door path olcumu
 
-Kodda iki farklı “state” seviyesi vardır.
+## Solver State
 
-### 1. MCMC state
-Bu, `BaselineState`’tir. Haritanın tamamını temsil eder.
-
-### 2. Solver state
-Bu, HC3 solver içinde kullanılan daha küçük arama state’idir.
-
-`stamina_only` solver için bu state:
+HC3 solver icindeki state:
 - `node_id`
 - `remaining_stamina`
 - `collected_items_mask`
 - `has_key`
 
-şeklindedir.
-
-Yani:
-- MCMC state haritanın kendisini tutar
-- solver state ise bir aday harita üzerindeki oynanış senaryosunu tutar
-
-## Kapı Semantiği
-
-Bu projede kapı semantiği klasik “kilitli kapı = duvar” değildir.
-
-Şu anki kesin karar:
-- kapalı kapı üstünden geçilebilir
-- yani transit amaçlı normal yol gibi davranır
-- ama başarı üretmez
-- kapı ancak aktif olduğunda hedef haline gelir
-
-Kapı aktif olma koşulu:
-- kapı baştan açık olabilir
-- ya da anahtar alınmış olabilir
-
-Bu karar özellikle HC3 solver ve solution overlay tarafını doğrudan etkiler.
+MCMC state haritanin kendisini temsil eder. Solver state ise o harita uzerindeki oynanis senaryosunu temsil eder.

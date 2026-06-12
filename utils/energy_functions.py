@@ -15,7 +15,7 @@ from utils.hard_constraints import (
     StaminaOnlySolutionStep,
     analyze_stamina_only_hc3,
 )
-from utils.map_analysis import shortest_path_length
+from utils.map_analysis import shortest_path_length, shortest_path_length_with_blocked
 
 
 class EnergyState(Protocol):
@@ -478,11 +478,26 @@ def _start_key_door_path_spacing(state: StaminaAwareEnergyState) -> float:
     )
 
     if key_item is None:
-        return float(_shortest_path_distance_or_zero(state.grid, state.start, state.door))
+        return float(
+            _shortest_path_distance_or_zero(
+                state.grid,
+                state.start,
+                state.door,
+            )
+        )
 
     distances = (
-        _shortest_path_distance_or_zero(state.grid, state.start, key_item.position),
-        _shortest_path_distance_or_zero(state.grid, key_item.position, state.door),
+        _shortest_path_distance_or_zero(
+            state.grid,
+            state.start,
+            key_item.position,
+            blocked_positions={state.door} if state.locked_door else set(),
+        ),
+        _shortest_path_distance_or_zero(
+            state.grid,
+            key_item.position,
+            state.door,
+        ),
     )
     return sum(distances) / len(distances)
 
@@ -491,8 +506,17 @@ def _shortest_path_distance_or_zero(
     grid: list[list[int]],
     first_position: tuple[int, int],
     second_position: tuple[int, int],
+    blocked_positions: set[tuple[int, int]] | None = None,
 ) -> float:
-    distance = shortest_path_length(grid, first_position, second_position)
+    if blocked_positions:
+        distance = shortest_path_length_with_blocked(
+            grid,
+            first_position,
+            second_position,
+            blocked_positions=blocked_positions,
+        )
+    else:
+        distance = shortest_path_length(grid, first_position, second_position)
 
     if distance is None:
         return 0.0

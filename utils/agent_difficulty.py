@@ -371,7 +371,7 @@ def simulate_segment_population(
     blocked_positions.discard(source_node.position)
     blocked_positions.discard(target_node.position)
 
-    if door_is_active and problem.door not in {source_node.position, target_node.position}:
+    if problem.door not in {source_node.position, target_node.position}:
         blocked_positions.add(problem.door)
 
     agent_results: list[SegmentAgentResult] = []
@@ -384,6 +384,29 @@ def simulate_segment_population(
             source_position=source_node.position,
             target_position=target_node.position,
             agent_results=(),
+            output_stamina_samples=(),
+        )
+
+    if target_node.position == problem.door and not door_is_active:
+        for _ in range(agent_count):
+            start_stamina = rng.choice(incoming_stamina_samples)
+            agent_results.append(
+                SegmentAgentResult(
+                    success=False,
+                    start_stamina=start_stamina,
+                    remaining_stamina=start_stamina,
+                    total_steps=0,
+                    revisits=0,
+                    forced_backtracks=0,
+                )
+            )
+
+        return SegmentSimulationSummary(
+            source_node_id=source_node.node_id,
+            target_node_id=target_node.node_id,
+            source_position=source_node.position,
+            target_position=target_node.position,
+            agent_results=tuple(agent_results),
             output_stamina_samples=(),
         )
 

@@ -95,6 +95,37 @@ class EnergyFunctionTests(unittest.TestCase):
         self.assertAlmostEqual(breakdown.spacing_score, expected_score)
         self.assertAlmostEqual(breakdown.spacing_term, 10.0 * expected_score)
 
+    def test_spacing_term_blocks_locked_door_before_key(self) -> None:
+        state = DummyState(
+            grid=grid_from_rows(
+                "########",
+                "#......#",
+                "#......#",
+                "########",
+            ),
+            start=(1, 1),
+            door=(1, 3),
+            items=(ItemPlacement(kind="key", position=(1, 5), value=0),),
+            initial_stamina=20,
+            locked_door=True,
+        )
+
+        breakdown = stamina_agent_difficulty_energy_breakdown(
+            state=state,
+            target_agent_difficulty=0.5,
+            difficulty_weight=0.0,
+            segment_target_weight=0.0,
+            segment_balance_weight=0.0,
+            dead_segment_weight=0.0,
+            stamina_usage_weight=0.0,
+            final_stamina_weight=0.0,
+            spacing_weight=10.0,
+            spacing_target_scale=1.5,
+            agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=22),
+        )
+
+        self.assertAlmostEqual(breakdown.spacing_actual, (6 + 2) / 2)
+
     def test_segment_target_term_penalizes_segments_far_from_target_success(self) -> None:
         state = DummyState(
             grid=grid_from_rows(

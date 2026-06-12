@@ -143,9 +143,10 @@ class AgentDifficultyTests(unittest.TestCase):
         plan_kinds = {tuple(step.kind for step in plan.steps) for plan in plans}
 
         self.assertNotIn(("start", "door"), plan_kinds)
-        self.assertIn(("start", "item:key", "door"), plan_kinds)
+        self.assertNotIn(("start", "item:key", "door"), plan_kinds)
+        self.assertFalse(plans)
 
-    def test_locked_inactive_door_is_transit_inside_agent_segment(self) -> None:
+    def test_locked_inactive_door_blocks_agent_segment(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
                 "########",
@@ -163,20 +164,18 @@ class AgentDifficultyTests(unittest.TestCase):
             problem,
             config=AgentDifficultyConfig(agents_per_segment=10, random_seed=7),
         )
-        key_plan = next(
-            plan_summary
-            for plan_summary in summary.plan_summaries
-            if tuple(step.kind for step in plan_summary.plan.steps) == ("start", "item:key", "door")
-        )
 
-        self.assertEqual(key_plan.segment_summaries[0].success_rate, 1.0)
+        self.assertFalse(summary.solvable)
+        self.assertEqual(summary.semantic_plan_count, 0)
+        self.assertEqual(summary.simulated_plan_count, 0)
 
     def test_collected_item_is_transit_for_later_semantic_segments(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows(
-                "########",
-                "#......#",
-                "########",
+                "#########",
+                "#.......#",
+                "#.......#",
+                "#########",
             ),
             start=(1, 1),
             door=(1, 2),
@@ -212,8 +211,9 @@ class AgentDifficultyTests(unittest.TestCase):
             config=AgentDifficultyConfig(agents_per_segment=0, random_seed=8),
         )
 
+        self.assertFalse(summary.solvable)
         self.assertEqual(summary.dead_segment_count, 0)
-        self.assertEqual(summary.unique_segment_count, 1)
+        self.assertEqual(summary.unique_segment_count, 0)
         self.assertEqual(summary.dead_segment_ratio, 0.0)
 
     def test_zero_agent_success_on_exact_segment_is_not_dead_segment(self) -> None:

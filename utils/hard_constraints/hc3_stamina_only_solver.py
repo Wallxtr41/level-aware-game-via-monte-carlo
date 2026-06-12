@@ -4,9 +4,9 @@ Rules in this simplified model:
 - no monsters
 - no power items
 - stamina items are one-shot pickups
-- a closed door is still traversable like a normal road tile
-- the door becomes a success target only when it is initially open or the key
-  has been collected
+- a closed door blocks movement like a wall
+- the door becomes enterable and a success target only when it is initially
+  open or the key has been collected
 - reaching the door with exactly zero stamina is still a success
 """
 
@@ -193,6 +193,9 @@ def _compute_adjacency_for_mode(
                 if next_position in visited:
                     continue
 
+                if next_position == problem.door and not door_is_active:
+                    continue
+
                 if not is_walkable(problem.grid, next_row, next_col):
                     continue
 
@@ -238,6 +241,9 @@ def compute_reachable_edges_for_state(
             next_position = (next_row, next_col)
 
             if next_position in visited:
+                continue
+
+            if next_position == problem.door and not door_is_active:
                 continue
 
             if not is_walkable(problem.grid, next_row, next_col):

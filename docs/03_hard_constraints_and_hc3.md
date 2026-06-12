@@ -1,142 +1,110 @@
 # Hard Constraints ve HC3
 
-Bu dosya, harita üretiminde kullandığımız constraint mantığını açıklar.
+Bu dosya, harita uretiminde kullandigimiz hard constraint mantigini aciklar.
 
 ## HC1
 
-HC1 temel connectivity constraint’idir.
+HC1 temel connectivity constraint'idir.
 
-Amaç:
-- `start` noktasından tüm gerekli walkable bölgelere erişimin kopmaması
-- haritanın anlamsız kopuk adacıklara ayrılmaması
+Amac:
+- `start` noktasindan walkable bolgelerin kopuk adaciklara ayrilmamasini saglamak
+- topology proposal'lari sonrasi haritanin temel baglantililigini korumak
 
-Pratikte:
-- duvar açma / kapama hamleleri sonrasında haritanın bağlantılı kalıp kalmadığı kontrol edilir
+Not: HC1 ham grid uzerinden calisir. Kilitli kapinin oyun semantigindeki blok etkisi HC3 tarafinda uygulanir.
+
+## Door Partition Constraint
+
+Kapali kapi bloklu oldugu ve aktif kapiya girildiginde oyun bittigi icin, kapinin arkasinda yalnizca kapidan gecilerek erisilebilen buyuk alanlar olusmamali.
+
+Bu yuzden pipeline ek bir hard constraint uygular:
+- door hucre si gecici olarak blok kabul edilir
+- start'tan BFS calistirilir
+- door disindaki tum walkable hucreler hala start'tan erisilebilir olmalidir
+
+Bu constraint kapinin graph icinde articulation/bridge gibi davranmasini engeller. Kapi cikmaz sokak sonunda olabilir; fakat haritanin baska bir bolgesine tek gecis noktasi olamaz.
 
 ## HC2
 
-HC2, açık alanların belirli bir estetik/topolojik kısıtını korur.
+HC2 istenmeyen `2x2` acik bloklari engeller.
 
-Mevcut haliyle:
-- istenmeyen `2x2` açık blok oluşumları engellenir
-
-Amaç:
-- maze yapısının fazla “oda” benzeri bloklara dönüşmemesi
-- daha corridor ağırlıklı bir yapı korunması
+Amac:
+- maze yapisinin fazla oda benzeri bloklara donusmemesi
+- corridor agirlikli yapiyi korumak
 
 ## HC3 Nedir
 
-HC3, haritanın oyun kurallarına göre gerçekten çözülebilir olup olmadığını test eder.
+HC3, haritanin oyun kurallarina gore gercekten cozulebilir olup olmadigini test eder.
 
-Bu, sadece geometrik olarak kapıya yol var mı sorusu değildir.
+`stamina_only` mod icin HC3:
+- gerekirse key alinabilmeli
+- stamina itemlariyla birlikte stamina butcesi yetmeli
+- kapali kapi anahtar alinana kadar gecilememeli
+- kapi aktif hale geldikten sonra kapiya varilabilmeli
+- kapiya `0 stamina` ile varmak kabul edilmeli
 
-`stamina_only` mod için HC3 şu anlamdadır:
-- gerekirse anahtar alınabilmeli
-- stamina item’larıyla birlikte oyuncu stamina bütçesi yetmeli
-- kapı aktif hale geldikten sonra kapıya varılabilmeli
-- kapıya `0 stamina` ile varmak da kabul
+Bu sadece geometrik `start -> door` path kontrolu degildir; resource ve item toplama sirasini da iceren exact state-space search problemidir.
 
-## Neden HC3 Zor
+## Semantic Node Graph
 
-HC3, HC1 ve HC2’ye göre daha zordur çünkü:
-- sadece grid topolojisine bakmaz
-- item toplama sırasını önemser
-- kalan stamina’yı önemser
-- anahtar alınıp alınmadığını önemser
-
-Yani bu artık düz graph reachability değil, state-space search problemidir.
-
-## `stamina_only` HC3 Solver Mimarisi
-
-İlgili dosya:
-- [utils/hard_constraints/hc3_stamina_only_solver.py](../utils/hard_constraints/hc3_stamina_only_solver.py)
-
-Bu solver exact çalışır.
-
-### Exact ne demek
-
-Exact solver demek:
-- “çözülebilir” dediyse gerçekten çözülebilir
-- “çözülemez” dediyse gerçekten çözülemez
-
-Yani heuristic tahmin değildir.
-
-## Semantic Node Graph Mantığı
-
-Bu sade modelde solver, tüm grid üstünde hücre hücre brute-force dolaşmaz.
-
-Önce semantic node’lar oluşturulur:
+Solver tum grid'i hucre hucre brute-force gezmez. Once semantic node'lar olusturulur:
 - `start`
-- tüm item’lar
+- tum item'lar
 - `door`
 
-Sonra bu semantic node’lar arasında adjacency çıkarılır.
+Sonra node'lar arasindaki edge'ler BFS ile bulunur.
 
-Önemli kural:
-- bir semantic node’dan diğerine giderken
-- başka semantic node’nun içinden transit geçiş yapılmaz
+Kural:
+- baska semantic node uzerinden transit gecilmez
+- toplanmamis item hedef degilse terminal/blok gibi davranir
+- kapali kapi BFS icinde duvar gibi bloklanir
+- aktif kapi hedef node olur ve onun otesine BFS devam etmez
 
-Bu sayede:
-- item üstünden fark etmeden geçip onu yok sayma hatası oluşmaz
-- çözüm adımları daha temiz modellenir
+Bu sayede item ustunden habersiz gecme ve kapali kapi arkasini yanlislikla erisilebilir sayma hatasi engellenir.
 
 ## Closed Door ve Open Door Adjacency
 
-Solver iki ayrı adjacency tutar:
-- `closed_door_adjacency`
-- `open_door_adjacency`
+Solver iki mod dusunur:
+- closed-door mode: kapi bloktur, target degildir
+- open-door mode: kapi target olarak erisilebilir
 
-Sebep:
-- kapı kapalıyken transit hücre olabilir ama terminal olmayabilir
-- kapı aktif olduğunda ise hedef semantic node olur
-
-Bu ayrım solver’ın kapı aktif olmadan onu “başarı” sanmamasını sağlar.
+Runtime state icinde `has_key` false ise closed-door davranisi, true ise open-door davranisi uygulanir. Kapi bastan aciksa direkt open-door davranisi kullanilir.
 
 ## Solver State
 
-Solver state şu alanlardan oluşur:
+Solver state alanlari:
 - `node_id`
 - `remaining_stamina`
 - `collected_items_mask`
 - `has_key`
 
-Burada:
-- `collected_items_mask`, hangi item’ların toplandığını tutar
-- `has_key`, key alınmış mı bilgisini açık taşır
+`collected_items_mask` hangi item'larin toplandigini tutar. `has_key`, kapi davranisini belirler.
 
 ## Transition
 
-Bir solver state’ten komşu semantic node’a geçerken:
-
-1. edge cost kadar stamina düşer
-2. hedef node bir item ise ve ilk kez alınıyorsa etkisi uygulanır
-3. hedef node key ise `has_key = True`
-4. hedef node stamina item ise `+item.value` kadar stamina eklenir
-5. hedef node kapı ise ve kapı aktifse başarı kontrol edilir
+Bir state'ten hedef semantic node'a gecis:
+1. Mevcut kapi durumuna gore reachable semantic edge'ler hesaplanir.
+2. Edge cost kadar stamina duser.
+3. Stamina negatife duserse gecis iptal edilir.
+4. Hedef item ise etkisi uygulanir.
+5. Hedef key ise `has_key = True` olur.
+6. Hedef aktif door ise success uretilir.
 
 ## Dominance / Pruning
 
-Solver, aynı soyut imza için daha kötü state’leri tutmaz.
+Solver ayni soyut imza icin daha kotu state'leri tutmaz.
 
-İmza şu parçaları içerir:
+Imza:
 - `node_id`
 - `collected_items_mask`
 - `has_key`
 
-Bu imza sabitken:
-- daha düşük ya da eşit stamina’ya sahip bir state
-- daha yüksek stamina’ya sahip başka bir state tarafından domine edilir
+Bu imza sabitken daha dusuk veya esit stamina'ya sahip state, daha yuksek stamina'li state tarafindan domine edilir.
 
-Bu pruning sayesinde gereksiz senaryolar elenir.
+## Cozum Analizi
 
-## Çözüm Analizi
-
-Solver sadece solvable / unsolvable demekle kalmaz.
-
-`analyze_stamina_only_hc3(...)` ile şu bilgiler de alınır:
+`analyze_stamina_only_hc3(...)` su bilgileri dondurur:
 - `shortest_success_path_length`
 - `best_remaining_stamina`
 - `solution_steps`
 
-Bu veriler energy fonksiyonunda ve görselleştirme overlay’inde kullanılır.
-
+Bu veriler energy fonksiyonunda ve gorsellestirme overlay'inde kullanilir.

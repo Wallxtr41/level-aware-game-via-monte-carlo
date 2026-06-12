@@ -28,6 +28,15 @@ def is_walkable(grid: Grid, row: int, col: int) -> bool:
 
 
 def bfs_distances(grid: Grid, start: Position) -> dict[Position, int]:
+    return bfs_distances_with_blocked(grid, start, blocked_positions=set())
+
+
+def bfs_distances_with_blocked(
+    grid: Grid,
+    start: Position,
+    *,
+    blocked_positions: set[Position],
+) -> dict[Position, int]:
     start_row, start_col = start
 
     if not is_walkable(grid, start_row, start_col):
@@ -40,6 +49,9 @@ def bfs_distances(grid: Grid, start: Position) -> dict[Position, int]:
         row, col = queue.popleft()
 
         for next_row, next_col in iter_neighbors(row, col):
+            if (next_row, next_col) in blocked_positions:
+                continue
+
             if not is_walkable(grid, next_row, next_col):
                 continue
 
@@ -63,6 +75,21 @@ def choose_farthest_reachable_cell(grid: Grid, start: Position) -> Position:
 
 def shortest_path_length(grid: Grid, start: Position, goal: Position) -> int | None:
     distances = bfs_distances(grid, start)
+    return distances.get(goal)
+
+
+def shortest_path_length_with_blocked(
+    grid: Grid,
+    start: Position,
+    goal: Position,
+    *,
+    blocked_positions: set[Position],
+) -> int | None:
+    distances = bfs_distances_with_blocked(
+        grid,
+        start,
+        blocked_positions=blocked_positions - {start, goal},
+    )
     return distances.get(goal)
 
 

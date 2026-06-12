@@ -1,162 +1,148 @@
 # Stamina-Only HC3 Model
 
-Bu belge, sadeleştirilmiş HC3 modelini tanımlar.
+Bu belge sade stamina-only HC3 modelini tanimlar.
 
 Bu versiyonda:
-
 - canavar yok
 - power item yok
-- yalnızca stamina itemları var
-- kapı açık olabilir veya anahtar gerektirebilir
-- kapalı kapı geçilebilir bir hücredir
+- stamina itemlari var
+- kapi acik olabilir veya anahtar gerektirebilir
+- kapali kapi gecilemez; anahtar alinana kadar duvar gibi davranir
 
-Amaç:
+Amac:
 
-Başlangıçtan kapıya, stamina bitmeden ulaşan en az bir geçerli senaryo var mı?
+Baslangictan aktif kapiya, stamina negatife dusmeden ulasan en az bir gecerli senaryo var mi?
 
-Kapıya tam son adımda `stamina = 0` ile ulaşmak başarı sayılır.
+Kapiya tam son adimda `stamina = 0` ile ulasmak basari sayilir.
 
-## Oyun Kuralları
+## Oyun Kurallari
 
-### 1. Hücre Türleri
+### Hucre Turleri
 
 - duvar
 - normal yol
-- başlangıç
-- stamina itemı
+- baslangic
+- stamina itemi
 - anahtar
-- kapı
+- kapi
 
-### 2. Kapı Semantics
+### Kapi Semantigi
 
-Kapı kapalıyken:
+Kapi kapaliyken:
+- hucre gecilemez
+- basari uretmez
+- normal yol gibi transit kullanilamaz
+- BFS ve ajan simulasyonu icin duvar gibi bloklanir
 
-- hücre geçilebilirdir
-- başarı üretmez
-- normal yol gibi transit kullanılabilir
+Kapi acikken veya anahtar alindiktan sonra:
+- kapi hedef hucre olur
+- oraya ulasmak basari sayilir
+- target olmayan segmentlerde transit gecis olarak kullanilmaz
 
-Kapı açıkken veya anahtar alındıktan sonra:
+Bu karar, haritanin kapali kapi arkasindaki bolgelerini anahtar alinmadan erisilebilir sayma hatasini engeller.
 
-- kapı hedef hücre olur
-- oraya ulaşmak başarı sayılır
+Ek uretim kurali:
+- kapi hucre si blok kabul edildiginde start, kapi disindaki tum walkable hucrelere erisebilmelidir
+- yani kapi haritanin iki bolgesini birbirine baglayan tek kopru olamaz
+- bu sayede kapinin arkasinda oyun boyunca hic kullanilamayacak buyuk alanlar olusmaz
 
-Bu modelde kapalı kapı bir bariyer değildir.
+## Semantic Node Tanimi
 
-## Node Tanımı
-
-Semantic node’lar şunlardır:
-
+Semantic node'lar:
 - `start`
 - her `stamina item`
 - `key`
 - aktif `door`
 
-Burada aktif `door` şu anlama gelir:
+Aktif `door`:
+- kapi bastan aciksa aktiftir
+- kapi kilitliyse ancak anahtar alindiktan sonra aktiftir
 
-- kapı baştan açıksa door node aktiftir
-- kapı kapalıysa, anahtar alınana kadar door node aktif değildir
+Kapali kapi:
+- semantic target degildir
+- transit hucre degildir
+- BFS icinde bloklu hucredir
 
-Önemli karar:
+## Edge Tanimi
 
-- kapalı kapı node değildir
-- kapalı kapı sadece walkable transit hücredir
-
-## Edge Tanımı
-
-Bir semantic node’dan diğer semantic node’lara edge üretmek için BFS kullanılır.
+Bir semantic node'dan diger semantic node'lara edge uretmek icin BFS kullanilir.
 
 Her edge:
+- iki semantic node arasinda olur
+- agirligi iki node arasindaki en kisa yol uzunlugudur
+- baska semantic node uzerinden transit gecmez
+- kapali kapi uzerinden transit gecmez
 
-- iki semantic node arasında olur
-- ağırlığı, o iki node arasındaki en kısa yol uzunluğudur
+## BFS Kurali
 
-## BFS Kuralı
-
-Bir kaynak node’dan BFS başlatılırken:
-
+Bir kaynak node'dan BFS baslatilirken:
 - duvarlara girilmez
-- normal yol hücrelerine girilir
-- kapalı kapı hücresi normal yol gibi geçilebilir
-- başka semantic node’ya ulaşıldığında o node hedef olarak kaydedilir
-- ama o semantic node’nun ötesine BFS devam etmez
+- kapali kapiya girilmez
+- normal yol hucrelerine girilir
+- target disindaki henuz toplanmamis semantic item node'lari terminal/blok gibi davranir
+- aktif kapi hedef olarak kaydedilir ve o hucrenin otesine BFS devam etmez
 
-Bu kuralın amacı:
+Bu kuralin amaci:
+- item ustunden habersiz transit gecmeyi engellemek
+- kapali kapi arkasini anahtar alinmadan erisilebilir saymamak
+- semantic planlari gercek oyun akisi ile uyumlu tutmak
 
-- semantic node’ların üstünden “habersiz transit” yapılmasını engellemek
-- örneğin bir stamina itemının üzerinden geçip almamış gibi davranmamak
+## State Tanimi
 
-Yani semantic node’lar BFS için terminal noktalardır.
-
-## State Tanımı
-
-Arama state’i şunları tutar:
-
+Arama state'i sunlari tutar:
 - `current_node`
 - `remaining_stamina`
 - `collected_items_mask`
 - `has_key`
 
-Not:
+`has_key`, `collected_items_mask` icinden turetilebilir ama uygulamada acik alan olarak tutulur.
 
-- `has_key`, istersek `collected_items_mask` içinden türetilebilir
-- ama ayrı tutmak uygulamada daha temiz olabilir
+## Transition Kurali
 
-## Transition Kuralı
+Bir state'ten yeni state'e gecmek icin:
+1. Bulunulan node'dan cikilabilecek semantic node'lar mevcut kapi durumuna gore BFS ile bulunur.
+2. Her hedef node icin shortest-path maliyeti alinir.
+3. `remaining_stamina >= edge_cost` ise gecis denenebilir.
+4. Hedef node stamina item ise stamina eklenir.
+5. Hedef node key ise `has_key = True` olur.
+6. Hedef node kapi ise kapi aktif oldugu icin basari uretilir.
 
-Bir state’ten yeni bir state’e geçmek için:
-
-1. Bulunulan node’dan çıkılabilecek semantic node’lar BFS ile bulunur.
-2. Her hedef node için shortest-path maliyeti alınır.
-3. Eğer `remaining_stamina >= edge_cost` ise geçiş mümkündür.
-4. Hedef node’ya gidildiğinde:
-   - stamina item ise stamina eklenir
-   - key ise `has_key = True` olur
-   - kapı ise başarı kontrolü yapılır
-
-Kapıya ulaşıldığında `remaining_stamina = 0` olması kabul edilir.
+Kapiya ulasildiginda `remaining_stamina = 0` kabul edilir.
 
 ## Success Condition
 
-Harita çözülebilir sayılır eğer en az bir state:
+Harita cozulebilir sayilir eger en az bir state:
+- aktif kapi node'una ulasabiliyorsa
+- bu ulasim sirasinda stamina negatife dusmuyorsa
 
-- aktif kapı node’una ulaşabiliyorsa
-- ve bu ulaşım sırasında stamina negatife düşmüyorsa
+Son kontrol:
 
-Bu modelde son kontrol:
-
-- `remaining_stamina >= 0`
-
-şeklindedir.
+```text
+remaining_stamina >= 0
+```
 
 ## Neden Bu Model Exact?
 
-Bu sade problemde yol maliyeti sadece stamina tüketimidir.
+Bu sade problemde yol maliyeti sadece stamina tuketimidir.
 
-Canavar ve power olmadığı için:
+Canavar ve power olmadigi icin:
+- ayni iki semantic node arasindaki daha uzun bir yolun
+- daha kisa yola gore kaynak acisindan avantaji yoktur
 
-- aynı iki node arasındaki daha uzun bir yolun
-- daha kısa yola göre ayrı bir avantajı yoktur
+Bu yuzden semantic node'lar arasinda en kisa yol bilgisi yeterlidir.
 
-Bu yüzden semantic node’lar arası en kısa yol bilgisi yeterlidir.
+Model exact olur cunku:
+- semantic node uzerinden transit yasaktir
+- kapali kapi uzerinden transit yasaktir
+- shortest path mevcut kapi durumuna gore hesaplanir
+- alinmis item bilgisi state icinde tutulur
+- kapi yalnizca aktif oldugunda hedef sayilir
 
-Model exact olur çünkü:
+## Ozet
 
-- semantic node üzerinden transit yasaktır
-- shortest path doğru hesaplanır
-- alınmış item bilgisi state içinde tutulur
-- kapı yalnızca aktif olduğunda hedef sayılır
-
-Bu nedenle solver:
-
-- çözülebilir diyorsa gerçekten çözülebilirdir
-- çözülemez diyorsa gerçekten çözülemezdir
-
-## Özet
-
-Bu sade modelin temel fikri:
-
-1. Haritadaki anlamlı noktaları semantic node olarak seç.
-2. Node’lar arası shortest path mesafelerini BFS ile bul.
-3. Başka semantic node’ların üstünden transit geçme.
-4. `node + stamina + collected items + key` state’i ile arama yap.
-5. Aktif kapıya stamina negatife düşmeden ulaşılabiliyorsa HC3 sağlanır.
+1. Haritadaki anlamli noktalari semantic node olarak sec.
+2. Node'lar arasindaki shortest path mesafelerini BFS ile bul.
+3. Baska semantic node'larin ustunden transit gecme.
+4. Kapali kapiyi duvar gibi blokla.
+5. `node + stamina + collected items + key` state'i ile arama yap.
+6. Aktif kapiya stamina negatife dusmeden ulasilabiliyorsa HC3 saglanir.

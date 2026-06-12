@@ -29,7 +29,7 @@ class StaminaOnlyHC3SolverTests(unittest.TestCase):
         result = solve_stamina_only_hc3(problem)
         self.assertTrue(result.solvable)
 
-    def test_closed_door_is_transit_cell_until_key_is_collected(self) -> None:
+    def test_closed_door_blocks_transit_until_key_is_collected(self) -> None:
         problem = StaminaOnlyHC3Problem(
             grid=grid_from_rows("########", "#......#", "########"),
             start=(1, 1),
@@ -47,12 +47,12 @@ class StaminaOnlyHC3SolverTests(unittest.TestCase):
         closed_targets = {target_node_id for target_node_id, _ in graph.closed_door_adjacency[start_node_id]}
         open_targets = {target_node_id for target_node_id, _ in graph.open_door_adjacency[start_node_id]}
 
-        self.assertIn(key_node_id, closed_targets)
+        self.assertNotIn(key_node_id, closed_targets)
         self.assertNotIn(door_node_id, closed_targets)
         self.assertIn(door_node_id, open_targets)
 
         result = solve_stamina_only_hc3(problem)
-        self.assertTrue(result.solvable)
+        self.assertFalse(result.solvable)
 
     def test_unsolvable_when_stamina_cannot_reach_any_progress_node(self) -> None:
         problem = StaminaOnlyHC3Problem(
