@@ -49,6 +49,7 @@ class SegmentAgentResult:
     total_steps: int
     revisits: int
     forced_backtracks: int
+    visited_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,17 @@ class SegmentSimulationSummary:
     @property
     def average_success_remaining_stamina(self) -> float:
         return _average(self.output_stamina_samples)
+
+    @property
+    def average_success_visited_count(self) -> float:
+        success_visited_counts = tuple(
+            result.visited_count for result in self.agent_results if result.success
+        )
+
+        if success_visited_counts:
+            return _average(success_visited_counts)
+
+        return _average(result.visited_count for result in self.agent_results)
 
 
 @dataclass(frozen=True)
@@ -496,6 +508,7 @@ def simulate_segment_agent(
         total_steps=total_steps,
         revisits=revisits,
         forced_backtracks=forced_backtracks,
+        visited_count=len(visited_positions),
     )
 
 

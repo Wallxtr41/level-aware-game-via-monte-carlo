@@ -7,6 +7,7 @@ from typing import Callable, Protocol
 from utils.agent_difficulty import (
     AgentDifficultyConfig,
     AgentDifficultySummary,
+    PlanSimulationSummary,
     estimate_agent_difficulty,
 )
 from utils.hard_constraints import (
@@ -15,7 +16,12 @@ from utils.hard_constraints import (
     StaminaOnlySolutionStep,
     analyze_stamina_only_hc3,
 )
-from utils.map_analysis import shortest_path_length, shortest_path_length_with_blocked
+from utils.map_analysis import (
+    is_walkable,
+    iter_neighbors,
+    shortest_path_length,
+    shortest_path_length_with_blocked,
+)
 
 
 class EnergyState(Protocol):
@@ -64,6 +70,17 @@ class EnergyBreakdown:
     stamina_usage_actual: float | None = None
     stamina_usage_score: float | None = None
     stamina_usage_term: float | None = None
+    effective_success_rate: float | None = None
+    coverage_target: float | None = None
+    coverage_actual: float | None = None
+    coverage_score: float | None = None
+    coverage_term: float | None = None
+    branching_target: float | None = None
+    branching_actual: float | None = None
+    branching_score: float | None = None
+    branching_term: float | None = None
+    junction_density: float | None = None
+    trap_depth_score: float | None = None
     agent_difficulty_summary: AgentDifficultySummary | None = None
     solution_steps: tuple[StaminaOnlySolutionStep, ...] = ()
 
@@ -187,6 +204,12 @@ def stamina_agent_difficulty_energy(
     final_stamina_target_factor: float = 0.8,
     spacing_weight: float = 10.0,
     spacing_target_scale: float = 1.5,
+    coverage_weight: float = 10.0,
+    coverage_target_base: float = 0.15,
+    coverage_target_difficulty_scale: float = 0.55,
+    branching_weight: float = 10.0,
+    branching_target_base: float = 0.2,
+    branching_target_difficulty_scale: float = 0.5,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> float:
     breakdown = stamina_agent_difficulty_energy_breakdown(
@@ -202,6 +225,12 @@ def stamina_agent_difficulty_energy(
         final_stamina_target_factor=final_stamina_target_factor,
         spacing_weight=spacing_weight,
         spacing_target_scale=spacing_target_scale,
+        coverage_weight=coverage_weight,
+        coverage_target_base=coverage_target_base,
+        coverage_target_difficulty_scale=coverage_target_difficulty_scale,
+        branching_weight=branching_weight,
+        branching_target_base=branching_target_base,
+        branching_target_difficulty_scale=branching_target_difficulty_scale,
         agent_config=agent_config,
     )
     return breakdown.total_energy
@@ -220,6 +249,12 @@ def stamina_agent_difficulty_energy_breakdown(
     final_stamina_target_factor: float = 0.8,
     spacing_weight: float = 10.0,
     spacing_target_scale: float = 1.5,
+    coverage_weight: float = 10.0,
+    coverage_target_base: float = 0.15,
+    coverage_target_difficulty_scale: float = 0.55,
+    branching_weight: float = 10.0,
+    branching_target_base: float = 0.2,
+    branching_target_difficulty_scale: float = 0.5,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> EnergyBreakdown:
     difficulty_summary = estimate_agent_difficulty(
@@ -234,8 +269,12 @@ def stamina_agent_difficulty_energy_breakdown(
         config=agent_config,
         cache=STAMINA_ENERGY_CACHE,
     )
+    # Oyuncu en kolay rotayi oynar: plan basari oranlarinin basari-agirlikli
+    # ortalamasi (average <= R_eff <= max) ana zorluk sinyalidir.
+    effective_success_rate = _effective_route_success_rate(difficulty_summary)
+    effective_difficulty = 1.0 - effective_success_rate
     difficulty_term = difficulty_weight * abs(
-        difficulty_summary.main_route_difficulty - target_agent_difficulty
+        effective_difficulty - target_agent_difficulty
     )
     segment_success_target, segment_target_score = _segment_target_alignment(
         difficulty_summary=difficulty_summary,
@@ -250,12 +289,42 @@ def stamina_agent_difficulty_energy_breakdown(
         target_agent_difficulty=target_agent_difficulty,
         target_stamina_usage_rate=target_stamina_usage_rate,
     )
-    stamina_usage_actual = _weighted_stamina_plan_usage_rate(
+    # Min-bazli usage: oyuncunun yirtabilecegi en dusuk item kullanimi. 0 ise
+    # harita item'siz bitirilebilir demektir; hedefe uzaklik cezalandirilir.
+    stamina_usage_actual = _min_viable_stamina_usage(
         state=state,
         difficulty_summary=difficulty_summary,
     )
     stamina_usage_score = abs(stamina_usage_target - stamina_usage_actual)
     stamina_usage_term = stamina_usage_weight * stamina_usage_score
+    best_plan_summary = _best_solvable_plan_summary(difficulty_summary)
+    coverage_actual = _agent_coverage(
+        state=state,
+        best_plan_summary=best_plan_summary,
+    )
+    coverage_target = _clamp01(
+        coverage_target_base
+        + coverage_target_difficulty_scale * target_agent_difficulty
+    )
+    coverage_score = min(1.0, abs(coverage_target - coverage_actual))
+    coverage_term = coverage_weight * coverage_score
+    junction_density, trap_depth_score = _solution_branching(
+        state=state,
+        best_plan_summary=best_plan_summary,
+    )
+    # HC2'li maze'lerde junction_density dogal olarak ~[0, 0.35] araliginda
+    # kalir; tam [0, 1] skalasina normalize edilir.
+    junction_score = min(1.0, junction_density / 0.35)
+    branching_actual = (0.5 * junction_score) + (0.5 * trap_depth_score)
+    branching_target = _clamp01(
+        branching_target_base
+        + branching_target_difficulty_scale * target_agent_difficulty
+    )
+    # Tek tarafli ceza: HC1 yan koridorlarin kapatilmasina izin vermedigi icin
+    # dallanmayi dusurmek cogu zaman imkansizdir; sadece hedefin altinda kalan
+    # (fazla obvious) yollar cezalandirilir.
+    branching_score = min(1.0, max(0.0, branching_target - branching_actual))
+    branching_term = branching_weight * branching_score
     final_stamina_difficulty_scale = 1.0 - target_agent_difficulty
     final_stamina_target = (
         final_stamina_target_factor
@@ -290,11 +359,14 @@ def stamina_agent_difficulty_energy_breakdown(
             + stamina_usage_term
             + final_stamina_term
             + spacing_term
+            + coverage_term
+            + branching_term
         ),
         agent_difficulty_target=target_agent_difficulty,
-        agent_difficulty_actual=difficulty_summary.main_route_difficulty,
+        agent_difficulty_actual=effective_difficulty,
         agent_difficulty_term=difficulty_term,
-        agent_success_rate=difficulty_summary.main_route_success_rate,
+        agent_success_rate=effective_success_rate,
+        effective_success_rate=effective_success_rate,
         segment_success_target=segment_success_target,
         segment_target_score=segment_target_score,
         segment_target_term=segment_target_term,
@@ -315,6 +387,16 @@ def stamina_agent_difficulty_energy_breakdown(
         stamina_usage_actual=stamina_usage_actual,
         stamina_usage_score=stamina_usage_score,
         stamina_usage_term=stamina_usage_term,
+        coverage_target=coverage_target,
+        coverage_actual=coverage_actual,
+        coverage_score=coverage_score,
+        coverage_term=coverage_term,
+        branching_target=branching_target,
+        branching_actual=branching_actual,
+        branching_score=branching_score,
+        branching_term=branching_term,
+        junction_density=junction_density,
+        trap_depth_score=trap_depth_score,
         agent_difficulty_summary=difficulty_summary,
     )
 
@@ -331,6 +413,12 @@ def make_stamina_agent_difficulty_energy(
     final_stamina_target_factor: float = 0.8,
     spacing_weight: float = 10.0,
     spacing_target_scale: float = 1.5,
+    coverage_weight: float = 10.0,
+    coverage_target_base: float = 0.15,
+    coverage_target_difficulty_scale: float = 0.55,
+    branching_weight: float = 10.0,
+    branching_target_base: float = 0.2,
+    branching_target_difficulty_scale: float = 0.5,
     agent_config: AgentDifficultyConfig = AgentDifficultyConfig(),
 ) -> Callable[[StaminaAwareEnergyState], float]:
     def energy_function(state: StaminaAwareEnergyState) -> float:
@@ -347,6 +435,12 @@ def make_stamina_agent_difficulty_energy(
             final_stamina_target_factor=final_stamina_target_factor,
             spacing_weight=spacing_weight,
             spacing_target_scale=spacing_target_scale,
+            coverage_weight=coverage_weight,
+            coverage_target_base=coverage_target_base,
+            coverage_target_difficulty_scale=coverage_target_difficulty_scale,
+            branching_weight=branching_weight,
+            branching_target_base=branching_target_base,
+            branching_target_difficulty_scale=branching_target_difficulty_scale,
             agent_config=agent_config,
         )
 
@@ -409,7 +503,21 @@ def _segment_target_alignment(
     return _average(segment_targets), min(1.0, _average(segment_deviations))
 
 
-def _weighted_stamina_plan_usage_rate(
+def _effective_route_success_rate(difficulty_summary: AgentDifficultySummary) -> float:
+    solvable_success_rates = [
+        plan_summary.estimated_success_rate
+        for plan_summary in difficulty_summary.plan_summaries
+        if plan_summary.plan.semantic_success
+    ]
+    success_rate_sum = sum(solvable_success_rates)
+
+    if success_rate_sum <= 0.0:
+        return 0.0
+
+    return sum(rate * rate for rate in solvable_success_rates) / success_rate_sum
+
+
+def _min_viable_stamina_usage(
     *,
     state: StaminaAwareEnergyState,
     difficulty_summary: AgentDifficultySummary,
@@ -423,14 +531,10 @@ def _weighted_stamina_plan_usage_rate(
     if total_stamina_item_count == 0:
         return 0.0
 
-    weighted_usage_sum = 0.0
-    success_rate_sum = 0.0
+    min_usage: float | None = None
 
     for plan_summary in difficulty_summary.plan_summaries:
         if not plan_summary.plan.semantic_success:
-            continue
-
-        if plan_summary.estimated_success_rate <= 0.0:
             continue
 
         collected_stamina_count = sum(
@@ -442,13 +546,204 @@ def _weighted_stamina_plan_usage_rate(
             1.0,
             collected_stamina_count / total_stamina_item_count,
         )
-        weighted_usage_sum += plan_summary.estimated_success_rate * stamina_collection_ratio
-        success_rate_sum += plan_summary.estimated_success_rate
 
-    if success_rate_sum <= 0.0:
+        if min_usage is None or stamina_collection_ratio < min_usage:
+            min_usage = stamina_collection_ratio
+
+    return min_usage if min_usage is not None else 0.0
+
+
+def _best_solvable_plan_summary(
+    difficulty_summary: AgentDifficultySummary,
+) -> PlanSimulationSummary | None:
+    solvable_plan_summaries = [
+        plan_summary
+        for plan_summary in difficulty_summary.plan_summaries
+        if plan_summary.plan.semantic_success
+    ]
+
+    if not solvable_plan_summaries:
+        return None
+
+    return max(
+        solvable_plan_summaries,
+        key=lambda plan_summary: plan_summary.estimated_success_rate,
+    )
+
+
+def _agent_coverage(
+    *,
+    state: StaminaAwareEnergyState,
+    best_plan_summary: PlanSimulationSummary | None,
+) -> float:
+    if best_plan_summary is None:
         return 0.0
 
-    return weighted_usage_sum / success_rate_sum
+    walkable_count = _walkable_cell_count(state.grid)
+
+    if walkable_count == 0:
+        return 0.0
+
+    expected_visited = sum(
+        segment.average_success_visited_count
+        for segment in best_plan_summary.segment_summaries
+    )
+    return min(1.0, expected_visited / walkable_count)
+
+
+def _solution_branching(
+    *,
+    state: StaminaAwareEnergyState,
+    best_plan_summary: PlanSimulationSummary | None,
+) -> tuple[float, float]:
+    if best_plan_summary is None:
+        return 0.0, 0.0
+
+    path_cells = _expand_best_plan_path(state, best_plan_summary)
+
+    if len(path_cells) < 2:
+        return 0.0, 0.0
+
+    junction_cell_count = 0
+    branch_entrances: set[tuple[int, int]] = set()
+
+    for position in path_cells:
+        off_path_neighbors = [
+            neighbor
+            for neighbor in iter_neighbors(*position)
+            if neighbor not in path_cells
+            and is_walkable(state.grid, neighbor[0], neighbor[1])
+        ]
+
+        if off_path_neighbors:
+            junction_cell_count += 1
+            branch_entrances.update(off_path_neighbors)
+
+    junction_density = min(1.0, junction_cell_count / len(path_cells))
+    grid_scale = _grid_path_scale(state.grid)
+    deep_trap_threshold = max(2.0, 0.25 * grid_scale)
+    trap_depths = [
+        _branch_depth(state.grid, entrance, path_cells)
+        for entrance in branch_entrances
+    ]
+    # Ortalama dal derinligi maze'lerde hep sature oldugu icin sinyal olarak
+    # "derin tuzak orani" kullanilir: esik uzeri dallarin tum dallara orani.
+    trap_depth_score = (
+        sum(1 for depth in trap_depths if depth >= deep_trap_threshold) / len(trap_depths)
+        if trap_depths
+        else 0.0
+    )
+    return junction_density, trap_depth_score
+
+
+def _branch_depth(
+    grid: list[list[int]],
+    entrance: tuple[int, int],
+    path_cells: set[tuple[int, int]],
+) -> float:
+    frontier = [entrance]
+    depth_by_position = {entrance: 1}
+    max_depth = 1
+
+    while frontier:
+        position = frontier.pop()
+        depth = depth_by_position[position]
+        max_depth = max(max_depth, depth)
+
+        for neighbor in iter_neighbors(*position):
+            if neighbor in path_cells or neighbor in depth_by_position:
+                continue
+
+            if not is_walkable(grid, neighbor[0], neighbor[1]):
+                continue
+
+            depth_by_position[neighbor] = depth + 1
+            frontier.append(neighbor)
+
+    return float(max_depth)
+
+
+def _expand_best_plan_path(
+    state: StaminaAwareEnergyState,
+    best_plan_summary: PlanSimulationSummary,
+) -> set[tuple[int, int]]:
+    steps = best_plan_summary.plan.steps
+    item_index_by_position = {
+        item.position: item_index for item_index, item in enumerate(state.items)
+    }
+    collected_positions = {steps[0].position}
+    path_cells: set[tuple[int, int]] = {steps[0].position}
+
+    for source_step, target_step in zip(steps, steps[1:]):
+        blocked_positions = {
+            item.position
+            for item in state.items
+            if item.position not in collected_positions
+            and item.position not in {source_step.position, target_step.position}
+        }
+
+        if state.door not in {source_step.position, target_step.position}:
+            blocked_positions.add(state.door)
+
+        leg_path = _bfs_path(
+            state.grid,
+            source_step.position,
+            target_step.position,
+            blocked_positions=blocked_positions,
+        )
+
+        if leg_path is not None:
+            path_cells.update(leg_path)
+
+        if target_step.position in item_index_by_position:
+            collected_positions.add(target_step.position)
+
+    return path_cells
+
+
+def _bfs_path(
+    grid: list[list[int]],
+    source: tuple[int, int],
+    target: tuple[int, int],
+    *,
+    blocked_positions: set[tuple[int, int]],
+) -> list[tuple[int, int]] | None:
+    if source == target:
+        return [source]
+
+    queue = [source]
+    parents: dict[tuple[int, int], tuple[int, int] | None] = {source: None}
+
+    while queue:
+        position = queue.pop(0)
+
+        for neighbor in iter_neighbors(*position):
+            if neighbor in parents or neighbor in blocked_positions:
+                continue
+
+            if not is_walkable(grid, neighbor[0], neighbor[1]):
+                continue
+
+            parents[neighbor] = position
+
+            if neighbor == target:
+                path = [target]
+                cursor: tuple[int, int] | None = position
+
+                while cursor is not None:
+                    path.append(cursor)
+                    cursor = parents[cursor]
+
+                path.reverse()
+                return path
+
+            queue.append(neighbor)
+
+    return None
+
+
+def _walkable_cell_count(grid: list[list[int]]) -> int:
+    return sum(1 for row in grid for cell in row if cell == 0)
 
 
 def _target_stamina_usage_rate(
@@ -457,18 +752,23 @@ def _target_stamina_usage_rate(
     target_agent_difficulty: float,
     target_stamina_usage_rate: float | None,
 ) -> float:
-    has_stamina_item = any(
-        getattr(item, "kind", None) == "stamina"
+    stamina_item_count = sum(
+        1
         for item in state.items
+        if getattr(item, "kind", None) == "stamina"
     )
 
-    if not has_stamina_item:
+    if stamina_item_count == 0:
         return 0.0
 
     if target_stamina_usage_rate is not None:
-        return _clamp01(target_stamina_usage_rate)
+        raw_target = _clamp01(target_stamina_usage_rate)
+    else:
+        raw_target = _clamp01(target_agent_difficulty)
 
-    return _clamp01(target_agent_difficulty)
+    # min_usage sadece k/n degerlerini alabilir; hedef ulasilamaz bir ara
+    # degerde kalirsa terim sabit bir ceza tabanina yapisir.
+    return round(raw_target * stamina_item_count) / stamina_item_count
 
 
 def _start_key_door_path_spacing(state: StaminaAwareEnergyState) -> float:

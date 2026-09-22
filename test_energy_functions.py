@@ -49,6 +49,8 @@ class EnergyFunctionTests(unittest.TestCase):
             final_stamina_weight=10.0,
             final_stamina_target_factor=0.8,
             spacing_weight=0.0,
+            coverage_weight=0.0,
+            branching_weight=0.0,
             agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=1),
         )
 
@@ -150,6 +152,8 @@ class EnergyFunctionTests(unittest.TestCase):
             stamina_usage_weight=0.0,
             final_stamina_weight=0.0,
             spacing_weight=0.0,
+            coverage_weight=0.0,
+            branching_weight=0.0,
             agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=3),
         )
 
@@ -158,7 +162,7 @@ class EnergyFunctionTests(unittest.TestCase):
         self.assertAlmostEqual(breakdown.segment_target_term, 3.0)
         self.assertAlmostEqual(breakdown.total_energy, 3.0)
 
-    def test_stamina_usage_term_penalizes_success_that_skips_stamina_items(self) -> None:
+    def test_stamina_usage_term_penalizes_maps_completable_without_stamina_items(self) -> None:
         state = DummyState(
             grid=grid_from_rows(
                 "#######",
@@ -185,23 +189,20 @@ class EnergyFunctionTests(unittest.TestCase):
             target_stamina_usage_rate=1.0,
             final_stamina_weight=0.0,
             spacing_weight=0.0,
+            coverage_weight=0.0,
+            branching_weight=0.0,
             agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=4),
         )
 
+        # initial_stamina=20 ile item'siz direkt plan da gecerli oldugu icin
+        # minimum viable usage 0'dir ve hedef 1.0'a uzaklik tam ceza uretir.
         self.assertAlmostEqual(breakdown.stamina_usage_target, 1.0)
-        self.assertGreater(breakdown.stamina_usage_actual, 0.0)
-        self.assertLess(breakdown.stamina_usage_actual, 1.0)
-        self.assertAlmostEqual(
-            breakdown.stamina_usage_score,
-            breakdown.stamina_usage_target - breakdown.stamina_usage_actual,
-        )
-        self.assertAlmostEqual(
-            breakdown.stamina_usage_term,
-            8.0 * breakdown.stamina_usage_score,
-        )
-        self.assertAlmostEqual(breakdown.total_energy, breakdown.stamina_usage_term)
+        self.assertAlmostEqual(breakdown.stamina_usage_actual, 0.0)
+        self.assertAlmostEqual(breakdown.stamina_usage_score, 1.0)
+        self.assertAlmostEqual(breakdown.stamina_usage_term, 8.0)
+        self.assertAlmostEqual(breakdown.total_energy, 8.0)
 
-    def test_stamina_usage_term_scales_by_total_stamina_item_count(self) -> None:
+    def test_stamina_usage_uses_minimum_viable_collection_ratio(self) -> None:
         grid = grid_from_rows(
             "#######",
             "#.....#",
@@ -213,8 +214,8 @@ class EnergyFunctionTests(unittest.TestCase):
             grid=grid,
             start=(1, 1),
             door=(1, 5),
-            items=(ItemPlacement(kind="stamina", position=(3, 1), value=4),),
-            initial_stamina=6,
+            items=(ItemPlacement(kind="stamina", position=(3, 1), value=8),),
+            initial_stamina=3,
             locked_door=False,
         )
         two_stamina_state = DummyState(
@@ -222,10 +223,10 @@ class EnergyFunctionTests(unittest.TestCase):
             start=(1, 1),
             door=(1, 5),
             items=(
-                ItemPlacement(kind="stamina", position=(3, 1), value=4),
-                ItemPlacement(kind="stamina", position=(3, 5), value=4),
+                ItemPlacement(kind="stamina", position=(3, 1), value=8),
+                ItemPlacement(kind="stamina", position=(3, 5), value=8),
             ),
-            initial_stamina=6,
+            initial_stamina=3,
             locked_door=False,
         )
 
@@ -239,6 +240,8 @@ class EnergyFunctionTests(unittest.TestCase):
             target_stamina_usage_rate=1.0,
             final_stamina_weight=0.0,
             spacing_weight=0.0,
+            coverage_weight=0.0,
+            branching_weight=0.0,
             agent_config=AgentDifficultyConfig(agents_per_segment=10, random_seed=4),
         )
         one_stamina_breakdown = stamina_agent_difficulty_energy_breakdown(
@@ -250,10 +253,12 @@ class EnergyFunctionTests(unittest.TestCase):
             **common_kwargs,
         )
 
-        self.assertLess(
-            two_stamina_breakdown.stamina_usage_actual,
-            one_stamina_breakdown.stamina_usage_actual,
-        )
+        # initial_stamina=3 direkt plani oldurur: tek item'li haritada item
+        # zorunludur (min_usage=1.0). Iki item'li haritada tek item toplayan
+        # plan gecerli kalir (min_usage=0.5), bu yuzden hedef 1.0'a gore ceza
+        # daha yuksektir.
+        self.assertAlmostEqual(one_stamina_breakdown.stamina_usage_actual, 1.0)
+        self.assertAlmostEqual(two_stamina_breakdown.stamina_usage_actual, 0.5)
         self.assertGreater(
             two_stamina_breakdown.stamina_usage_term,
             one_stamina_breakdown.stamina_usage_term,

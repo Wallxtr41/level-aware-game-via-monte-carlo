@@ -50,15 +50,21 @@ TARGET_PATH_LENGTH = 52
 TARGET_FINAL_STAMINA = 10
 TARGET_AGENT_DIFFICULTY = game_config.TARGET_AGENT_DIFFICULTY
 AGENT_DIFFICULTY_WEIGHT = 30.0
-SEGMENT_TARGET_WEIGHT = 15.0
+SEGMENT_TARGET_WEIGHT = 8.0
 SEGMENT_BALANCE_WEIGHT = 0
 DEAD_SEGMENT_WEIGHT = 0
-STAMINA_USAGE_WEIGHT = 7.0
+STAMINA_USAGE_WEIGHT = 15.0
 TARGET_STAMINA_USAGE_RATE = None  # None => TARGET_AGENT_DIFFICULTY
-FINAL_STAMINA_WEIGHT = 10.0
+FINAL_STAMINA_WEIGHT = 6.0
 FINAL_STAMINA_TARGET_FACTOR = 0.8
-SPACING_WEIGHT = 20.0
-SPACING_TARGET_SCALE = 2
+SPACING_WEIGHT = 8.0
+SPACING_TARGET_SCALE = 1.3
+COVERAGE_WEIGHT = 10.0
+COVERAGE_TARGET_BASE = 0.15
+COVERAGE_TARGET_DIFFICULTY_SCALE = 0.55
+BRANCHING_WEIGHT = 10.0
+BRANCHING_TARGET_BASE = 0.25
+BRANCHING_TARGET_DIFFICULTY_SCALE = 0.5
 INITIAL_STAMINA_BASE_SCALE = 1.5
 INITIAL_STAMINA_DIFFICULTY_SCALE = 2
 INITIAL_STAMINA_NOISE_STD_SCALE = 0.2
@@ -109,6 +115,12 @@ STAMINA_AGENT_DIFFICULTY_ENERGY_FUNCTION = make_stamina_agent_difficulty_energy(
     final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
     spacing_weight=SPACING_WEIGHT,
     spacing_target_scale=SPACING_TARGET_SCALE,
+    coverage_weight=COVERAGE_WEIGHT,
+    coverage_target_base=COVERAGE_TARGET_BASE,
+    coverage_target_difficulty_scale=COVERAGE_TARGET_DIFFICULTY_SCALE,
+    branching_weight=BRANCHING_WEIGHT,
+    branching_target_base=BRANCHING_TARGET_BASE,
+    branching_target_difficulty_scale=BRANCHING_TARGET_DIFFICULTY_SCALE,
     agent_config=AGENT_DIFFICULTY_CONFIG,
 )
 
@@ -169,6 +181,12 @@ def rebuild_runtime_config() -> None:
         final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
         spacing_weight=SPACING_WEIGHT,
         spacing_target_scale=SPACING_TARGET_SCALE,
+        coverage_weight=COVERAGE_WEIGHT,
+        coverage_target_base=COVERAGE_TARGET_BASE,
+        coverage_target_difficulty_scale=COVERAGE_TARGET_DIFFICULTY_SCALE,
+        branching_weight=BRANCHING_WEIGHT,
+        branching_target_base=BRANCHING_TARGET_BASE,
+        branching_target_difficulty_scale=BRANCHING_TARGET_DIFFICULTY_SCALE,
         agent_config=AGENT_DIFFICULTY_CONFIG,
     )
     MODE_CONFIGS = {
@@ -322,6 +340,12 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
                 spacing_weight=SPACING_WEIGHT,
                 spacing_target_scale=SPACING_TARGET_SCALE,
+                coverage_weight=COVERAGE_WEIGHT,
+                coverage_target_base=COVERAGE_TARGET_BASE,
+                coverage_target_difficulty_scale=COVERAGE_TARGET_DIFFICULTY_SCALE,
+                branching_weight=BRANCHING_WEIGHT,
+                branching_target_base=BRANCHING_TARGET_BASE,
+                branching_target_difficulty_scale=BRANCHING_TARGET_DIFFICULTY_SCALE,
                 agent_config=AGENT_DIFFICULTY_CONFIG,
             )
             return (
@@ -349,6 +373,14 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 f"spacing_actual={breakdown.spacing_actual} "
                 f"spacing_score={breakdown.spacing_score} "
                 f"spacing_term={breakdown.spacing_term} "
+                f"coverage_target={breakdown.coverage_target} "
+                f"coverage_actual={breakdown.coverage_actual} "
+                f"coverage_term={breakdown.coverage_term} "
+                f"branching_target={breakdown.branching_target} "
+                f"branching_actual={breakdown.branching_actual} "
+                f"junction_density={breakdown.junction_density} "
+                f"trap_depth_score={breakdown.trap_depth_score} "
+                f"branching_term={breakdown.branching_term} "
                 f"total={breakdown.total_energy}\n"
                 "terms: "
                 f"main_route={breakdown.agent_difficulty_term} "
@@ -358,6 +390,8 @@ def get_energy_breakdown(state: BaselineState) -> str:
                 f"stamina_usage={breakdown.stamina_usage_term} "
                 f"final_stamina={breakdown.remaining_stamina_term} "
                 f"spacing={breakdown.spacing_term} "
+                f"coverage={breakdown.coverage_term} "
+                f"branching={breakdown.branching_term} "
                 f"total={breakdown.total_energy}"
             )
 
@@ -396,6 +430,12 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
         final_stamina_target_factor=FINAL_STAMINA_TARGET_FACTOR,
         spacing_weight=SPACING_WEIGHT,
         spacing_target_scale=SPACING_TARGET_SCALE,
+        coverage_weight=COVERAGE_WEIGHT,
+        coverage_target_base=COVERAGE_TARGET_BASE,
+        coverage_target_difficulty_scale=COVERAGE_TARGET_DIFFICULTY_SCALE,
+        branching_weight=BRANCHING_WEIGHT,
+        branching_target_base=BRANCHING_TARGET_BASE,
+        branching_target_difficulty_scale=BRANCHING_TARGET_DIFFICULTY_SCALE,
         agent_config=AGENT_DIFFICULTY_CONFIG,
     )
     summary = breakdown.agent_difficulty_summary
@@ -409,6 +449,8 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
             f"semantic_plans={summary.semantic_plan_count} "
             f"simulated_plans={summary.simulated_plan_count} "
             f"main_route_success_rate={summary.main_route_success_rate:.3f} "
+            f"effective_success_rate={breakdown.effective_success_rate:.3f} "
+            f"effective_difficulty={breakdown.agent_difficulty_actual:.3f} "
             f"best_success_rate={summary.best_plan_success_rate:.3f} "
             f"main_route_difficulty={summary.main_route_difficulty:.3f} "
             f"segment_success_target={breakdown.segment_success_target:.3f} "
@@ -434,6 +476,18 @@ def get_agent_difficulty_summary(state: BaselineState, label: str = "state") -> 
             f"spacing_actual={breakdown.spacing_actual:.3f} "
             f"spacing_score={breakdown.spacing_score:.3f} "
             f"spacing_term={breakdown.spacing_term:.3f}"
+        ),
+        (
+            f"coverage_target={breakdown.coverage_target:.3f} "
+            f"coverage_actual={breakdown.coverage_actual:.3f} "
+            f"coverage_term={breakdown.coverage_term:.3f}"
+        ),
+        (
+            f"branching_target={breakdown.branching_target:.3f} "
+            f"branching_actual={breakdown.branching_actual:.3f} "
+            f"junction_density={breakdown.junction_density:.3f} "
+            f"trap_depth_score={breakdown.trap_depth_score:.3f} "
+            f"branching_term={breakdown.branching_term:.3f}"
         ),
     ]
 
